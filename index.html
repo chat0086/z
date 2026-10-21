@@ -518,17 +518,32 @@ async function cleanupPrivateChat(chatId) {
     try {
         const q = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'asc'));
         const snap = await getDocs(q);
-        if (snap.size > 15) {
-            const excessCount = snap.size - 15;
+        const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+        const now = Date.now();
+
+        let docsArray = [];
+        snap.forEach(d => docsArray.push({ ref: d.ref, data: d.data() }));
+
+        for (let item of docsArray) {
+            const m = item.data;
+            if (m.createdAt && typeof m.createdAt.toMillis === 'function') {
+                if (now - m.createdAt.toMillis() > TWO_DAYS) {
+                    await deleteDoc(item.ref);
+                }
+            }
+        }
+
+        const q2 = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'asc'));
+        const snap2 = await getDocs(q2);
+        if (snap2.size > 15) {
+            const excessCount = snap2.size - 15;
             let deletedCount = 0;
-            const batchDeletes = [];
-            snap.forEach(d => {
+            snap2.forEach(async (d) => {
                 if (deletedCount < excessCount) {
-                    batchDeletes.push(deleteDoc(d.ref));
+                    await deleteDoc(d.ref);
                     deletedCount++;
                 }
             });
-            await Promise.all(batchDeletes);
         }
     } catch (e) {
         console.warn("Cleanup error:", e);
@@ -565,16 +580,11 @@ function toggleChatOptions(){if(!window._selectedDoc||!selectedMsgIndex){alert('
 window.toggleChatOptions=toggleChatOptions;
 function replyMsg(){if(!window._selectedDoc)return;replyTo=String(window._selectedDoc.text||'');$('chatInput').placeholder='Reply to: '+replyTo.slice(0,20);$('chatInput').focus();$('chatOptions').style.display='none'}
 window.replyMsg=replyMsg;
-
 async function deleteMsg(){
 if(!selectedMsgIndex||!window._selectedDoc||!selected)return;if(String(window._selectedDoc.from||'').toLowerCase()!==currentUser.toLowerCase()){alert('You can only delete your own messages.');$('chatOptions').style.display='none';return}
-const id=getChatId(currentUser,selected);
-const msgId=selectedMsgIndex;
-selectedMsgIndex=null;window._selectedDoc=null;$('chatOptions').style.display='none';
-try{await deleteDoc(doc(db,'privateChats',id,'messages',msgId))}catch(e){showError('Could not delete message.',e)}
+const id=getChatId(currentUser,selected);if(confirm('Delete this message?'))try{await deleteDoc(doc(db,'privateChats',id,'messages',selectedMsgIndex));selectedMsgIndex=null;window._selectedDoc=null}catch(e){showError('Could not delete message.',e)}$('chatOptions').style.display='none'
 }
 window.deleteMsg=deleteMsg;
-
 async function editMsg(){
 if(!selectedMsgIndex||!window._selectedDoc||!selected)return;if(String(window._selectedDoc.from||'').toLowerCase()!==currentUser.toLowerCase()){alert('You can only edit your own messages.');return}
 if(window._selectedDoc.type){alert('Media edit nahi ho sakti.');return}const value=prompt('Edit message:',String(window._selectedDoc.text||''));if(value===null)return;if(!value.trim())return alert('Message cannot be empty.');if(value.length>2000)return alert('Message is too long.');
@@ -660,12 +670,20 @@ window.addEventListener('pagehide',()=>{if(currentUser){stopGlobalTyping();stopP
 
   <div id="myStView" class="nx-ov">
     <div class="top-g"><button type="button" class="nx-back" id="myBack">‹</button><h2>My Status</h2><span style="width:30px"></span></div>
+    <div class="nx-body" id="myStBody">
+      <!-- Dynamic My Status Items Container -->
+      <button type="button" class="nx-big" id="newStBtn" style="background:#00a884;color:#000;border-color:#00a884;text-align:center;">➕ New Status</button>
+      <button type="button" class="nx-big" id="myViewsBtn">👁 Views (0)</button>
+      <div id="myViews" style="display:none;flex-direction:column;gap:8px"></div>
+    </div>
+  </div>
+
+  <div id="newStChoice" class="nx-ov">
+    <div class="top-g"><button type="button" class="nx-back" id="newStBack">‹</button><h2>Add Status</h2><span style="width:30px"></span></div>
     <div class="nx-body">
       <button type="button" class="nx-big" id="stImgBtn">🖼️ Image Status</button>
       <button type="button" class="nx-big" id="stVidBtn">📹 Video Status</button>
       <button type="button" class="nx-big" id="stTxtBtn">✍️ Text Status</button>
-      <button type="button" class="nx-big" id="myViewsBtn">👁 Views (0)</button>
-      <div id="myViews" style="display:none;flex-direction:column;gap:8px"></div>
     </div>
   </div>
 
@@ -793,8 +811,20 @@ function renderMy(){
   const m=nx().me(),mine=(byOwner()[m]||[]).slice().reverse(),vs=new Set();
   mine.forEach(s=>Object.keys(s.views||{}).forEach(k=>vs.add(k)));
   $('myViewsBtn').textContent='👁 Views ('+vs.size+')';
-  const box=$('myViews');box.replaceChildren();
-  if(!mine.length){box.appendChild(el('div','color:var(--muted)','No active status.'));return}
+  
+  // Clear dynamic elements except New Status and Views section headers
+  const newStBtn = $('newStBtn');
+  const myViewsBtn = $('myViewsBtn');
+  const myViews = $('myViews');
+  const body = $('myStBody');
+  body.replaceChildren(newStBtn, myViewsBtn, myViews);
+
+  if(!mine.length){
+    const emptyNotice = el('div','color:var(--muted);text-align:center;padding:10px','No active status.');
+    body.insertBefore(emptyNotice, myViewsBtn);
+    return;
+  }
+  
   mine.forEach(s=>{
     const sec=el('div');sec.className='nx-sec';
     const h=el('div','display:flex;align-items:center;gap:8px;margin-bottom:6px');
@@ -804,29 +834,42 @@ function renderMy(){
     if(s.type==='image') titleTxt = '🖼️ Photo Status';
     if(s.type==='video') titleTxt = '📹 Video Status';
     h.append(el('div','flex:1;font-weight:700;font-size:13px;color:var(--text)',titleTxt+' • '+fmt(s.ms)),del);sec.appendChild(h);
+    
+    // Preview thumbnail or text inside My Status view
+    if(s.type==='image'){
+      const im=el('img','max-width:100%;max-height:150px;border-radius:6px;display:block;margin-top:6px;object-fit:cover');
+      im.src=s.img; sec.appendChild(im);
+    }else if(s.type==='video'){
+      const vd=el('video','max-width:100%;max-height:150px;border-radius:6px;display:block;margin-top:6px');
+      vd.src=s.vid; vd.controls=true; sec.appendChild(vd);
+    }
+
     const vk=Object.keys(s.views||{}).sort((a,b)=>s.views[b].t-s.views[a].t);
-    if(!vk.length)sec.appendChild(el('div','font-size:12px;color:var(--muted)','No views yet'));
+    if(!vk.length)sec.appendChild(el('div','font-size:12px;color:var(--muted);margin-top:6px','No views yet'));
     vk.forEach(k=>{const r=el('div');r.className='nx-vrow';const i2=el('div','flex:1;min-width:0');i2.append(el('div','font-weight:700;font-size:13px;color:var(--text)',k),el('div','font-size:10px;color:var(--muted)',fmt(s.views[k].t)));r.append(mkAv(k,38),i2,el('div','font-size:24px',s.views[k].r||''));sec.appendChild(r)});
-    box.appendChild(sec)
+    
+    body.insertBefore(sec, myViewsBtn);
   })
 }
 $('myViewsBtn').addEventListener('click',()=>{const b=$('myViews');b.style.display=b.style.display==='flex'?'none':'flex'});
+$('newStBtn').addEventListener('click',()=>{$('newStChoice').style.display='flex'});
 $('stImgBtn').addEventListener('click',()=>pickImage(async f=>{
-  try{const img=await compress(f,1000,.7);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'image',img,text:'',views:{},createdAt:serverTimestamp()});alert('Image Status uploaded ✅')}catch(e){alert('Upload failed: '+(e.message||e))}}));
+  try{const img=await compress(f,1000,.7);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'image',img,text:'',views:{},createdAt:serverTimestamp()});$('newStChoice').style.display='none';alert('Image Status uploaded ✅')}catch(e){alert('Upload failed: '+(e.message||e))}}));
 $('stVidBtn').addEventListener('click',()=>pickVideo(async f=>{
-  try{alert('Video compress ho rahi hai, kripya thoda intezaar karein...');const vData=await compressVideo(f);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'video',vid:vData.vid,text:'',views:{},createdAt:serverTimestamp()});alert('Video Status uploaded ✅')}catch(e){console.warn(e)}}));
+  try{alert('Video compress ho rahi hai, kripya thoda intezaar karein...');const vData=await compressVideo(f);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'video',vid:vData.vid,text:'',views:{},createdAt:serverTimestamp()});$('newStChoice').style.display='none';alert('Video Status uploaded ✅')}catch(e){console.warn(e)}}));
 $('stTxtBtn').addEventListener('click',()=>{$('txtArea').value='';$('txtComposer').style.display='flex';$('txtArea').focus()});
 $('txtColor').addEventListener('click',()=>{tbg=(tbg+1)%COLORS.length;$('txtArea').style.background=COLORS[tbg]});
 $('txtUpload').addEventListener('click',async()=>{
   const t=$('txtArea').value.trim();if(!t)return alert('Pehle kuch likho.');
-  try{await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'text',text:t,bg:COLORS[tbg],views:{},createdAt:serverTimestamp()});$('txtComposer').style.display='none';alert('Status uploaded ✅')}catch(e){alert('Upload failed: '+(e.message||e))}});
+  try{await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'text',text:t,bg:COLORS[tbg],views:{},createdAt:serverTimestamp()});$('txtComposer').style.display='none';$('newStChoice').style.display='none';alert('Status uploaded ✅')}catch(e){alert('Upload failed: '+(e.message||e))}});
 function backSt(){
   if($('stViewer').style.display==='flex')return closeViewer();
   if($('txtComposer').style.display==='flex'){$('txtComposer').style.display='none';return}
+  if($('newStChoice').style.display==='flex'){$('newStChoice').style.display='none';return}
   if($('myStView').style.display==='flex'){$('myStView').style.display='none';return}
   window.showApp('inbox')
 }
-$('stBack').addEventListener('click',backSt);$('myBack').addEventListener('click',backSt);$('txtBack').addEventListener('click',backSt);
+$('stBack').addEventListener('click',backSt);$('myBack').addEventListener('click',backSt);$('newStBack').addEventListener('click',()=>{$('newStChoice').style.display='none'});$('txtBack').addEventListener('click',backSt);
 document.addEventListener('keydown',e=>{
   if(!$('statusApp').classList.contains('show'))return;
   const typing=e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA';
@@ -906,7 +949,7 @@ vSend.addEventListener('click',async()=>{
     if(await sendMedia({type:'voice',audio:url,dur:secs,text:'🎤 Voice message'}))resetVoice()
   }finally{sending=false}
 });
-new MutationObserver(()=>{if(!$('statusApp').classList.contains('show')&&vbar.style.display==='flex')resetVoice()}).observe($('statusApp'),{attributes:true,attributeFilter:['class']});
+new MutationObserver(()=>{if(!$('chatApp').classList.contains('show')&&vbar.style.display==='flex')resetVoice()}).observe($('chatApp'),{attributes:true,attributeFilter:['class']});
 </script>
 
 </body>
