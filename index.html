@@ -89,7 +89,7 @@ button:disabled{opacity:.6}
 .tick{font-size:11px}.tick.seen{color:#53bdeb}.tick.delivered{color:var(--text)}
 .reply-preview{font-size:10px;background:rgba(0,0,0,.25);border-left:2px solid var(--accent);padding:3px 6px;border-radius:4px;margin-bottom:4px;color:var(--accent);overflow-wrap:anywhere}
 #typingInd{display:none;flex-shrink:0;padding:6px 12px;color:#00ff46;font-size:11px;font-style:italic}
-.inputbar{height:50px;flex-shrink:0;background:var(--chathead,#202c33);display:flex;align-items:center;padding:0 8px;gap:8px}
+.inputbar{height:50px;flex-shrink:0;background:var(--chathead,#202c33);display:flex;align-items:center;padding:0 8px;gap:8px;position:relative}
 .inputbar input{min-width:0;flex:1;height:34px;background:var(--privinput,#2a3942);border:none;border-radius:18px;color:var(--text);padding:0 14px}
 .send{width:34px;height:34px;flex-shrink:0;background:#00a884;border-radius:50%;display:flex;align-items:center;justify-content:center;color:#000;font-weight:800;cursor:pointer;border:0}
 .soft{height:32px;flex-shrink:0;background:var(--soft);display:flex;justify-content:space-between;align-items:center;padding:0 10px;font-size:11px;color:#7aff9a;border-top:1px solid #222}
@@ -154,14 +154,17 @@ button:disabled{opacity:.6}
 <div class="top-g"><h2>⚙️ Settings</h2><button type="button" style="color:var(--accent);background:transparent;border:0;cursor:pointer" onclick="closeSettings()">✕ Close</button></div>
 <div class="settings-content">
 <div class="settings-card">
-<div class="settings-title">🔔 INBOX NOTIFICATIONS</div>
-<div class="setting-row"><span>Private Inbox Sound</span><button id="soundToggle" class="setting-toggle on" type="button" onclick="toggleInboxSound()">ON</button></div>
-<div style="font-size:11px;color:var(--muted);line-height:1.5;padding-top:8px">Sound is only for incoming private Inbox messages. Global Lounge messages do not play notification sounds.</div>
+<div class="settings-title">🛡️ CHAT PRIVACY</div>
+<div class="setting-row"><span>Spam Protection</span><button id="spamToggle" class="setting-toggle on" type="button" onclick="toggleSpamProtection()">ON</button></div>
+<div style="font-size:11px;color:var(--muted);line-height:1.4;padding-top:6px">Only contacts can message you; new users cannot message you, but you can message everyone.</div>
 </div>
 <div class="settings-card">
-<div class="settings-title">🎨 CHOOSE YOUR THEME</div>
-<div id="themeGrid" class="theme-grid"></div>
-<div style="font-size:11px;color:var(--muted);padding-top:10px">Select any theme. Your choice will be saved on this device.</div>
+<div class="settings-title">🔔 NOTIFICATIONS</div>
+<div class="setting-row"><span>Private Inbox Sound</span><button id="soundToggle" class="setting-toggle on" type="button" onclick="toggleInboxSound()">ON</button></div>
+</div>
+<div class="settings-card">
+<div class="settings-title" id="themeSectionTitle" style="cursor:pointer;display:flex;justify-content:space-between;align-items:center;">🎨 THEMES <span style="font-size:12px">▼</span></div>
+<div id="themeGrid" class="theme-grid" style="display:none;margin-top:10px;"></div>
 </div>
 </div>
 <div class="soft"><span>Settings</span><span onclick="closeSettings()">Back</span></div>
@@ -199,7 +202,7 @@ window.showPass=function(){var p=document.getElementById('password');p.type=p.ty
 
 <script type="module">
 import {initializeApp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import {getFirestore,initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,addDoc,doc,setDoc,deleteDoc,updateDoc,onSnapshot,query,orderBy,limit,serverTimestamp,arrayUnion,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {getFirestore,initializeFirestore,persistentLocalCache,persistentMultipleTabManager,collection,addDoc,doc,setDoc,deleteDoc,updateDoc,onSnapshot,query,orderBy,limit,startAfter,serverTimestamp,arrayUnion,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {getAuth,createUserWithEmailAndPassword,signInWithEmailAndPassword,onAuthStateChanged,signOut} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig={apiKey:"AIzaSyDwDjLlhRxNNfIFN1B9j4PUTqT0fq34y50",authDomain:"nexachat-28ecc.firebaseapp.com",projectId:"nexachat-28ecc",storageBucket:"nexachat-28ecc.firebasestorage.app",messagingSenderId:"367209102337",appId:"1:367209102337:web:6f3a0e63b554f6dd145400",measurementId:"G-JLQW9XPDL6"};
@@ -209,14 +212,15 @@ try{db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:pers
 const auth=getAuth(app);
 const $=id=>document.getElementById(id);
 const ONLINE_WINDOW=75000,HEARTBEAT_MS=25000,TYPING_REFRESH_MS=2000,TYPING_STOP_MS=1500,TYPING_SHOW_MS=5000,FRESH_MS=60000,INBOX_WATCH_LIMIT=30;
+const KEEP_MSGS=15,TWO_DAYS=2*24*60*60*1000,CHUNK_SIZE=700000;
 let currentUser=null,demoUsers=[],allUsers=[],remoteContacts=[],blockMap=readJSON('nexa_blockMap',{}),removedMap=readJSON('nexa_removed',{}),removedAtMap=readJSON('nexa_removed_at',{}),contactsMap=readJSON('nexa_contacts',{});
 let selected=null,selectedInbox=null,selectedMsgIndex=null,mentionIndex=0,replyTo=null,focusIndex=0;
 let globalUnsub=null,privateUnsub=null,usersUnsub=null,globalTypingUnsub=null,privateTypingUnsub=null;
 let globalTypingTimer=null,privateTypingTimer=null,globalTypingHide=null,privateTypingHide=null,globalLastTypingWrite=0,privateLastTypingWrite=0,privateTypingChatId=null,mentionOpen=false,lastMentionQuery='',messageCache=[],busy=false,authReady=false,authStateVersion=0,usersErrorShown=false,lastOnlineSig='',permErrorShown=false,serverSkew=0,lastOwnSeen=0;
-const inboxListeners=new Map(),notifiedMsgs=new Set();
+const inboxListeners=new Map(),notifiedMsgs=new Set(),chunkCache=new Map();
 let unreadMap={},lastMsgMap={},inboxRefreshTimer=null,audioCtx=null,masterBus=null;
 window.__nexaReady=true;
-window.__nx={db,me:()=>currentUser,users:()=>allUsers,contacts:()=>getContacts(),chatId:getChatId,sel:()=>selected,blocked:id=>isBlockedByMe(id)||isBlockedByOther(id),addContact};
+window.__nx={db,me:()=>currentUser,users:()=>allUsers,contacts:()=>getContacts(),chatId:getChatId,sel:()=>selected,blocked:id=>isBlockedByMe(id)||isBlockedByOther(id),addContact,cleanup:cleanupPrivateChat,chunkWrite,chunkLoad,prime:chunkPrime,delWithChunks:deleteWithChunks};
 
 function readJSON(key,fallback){try{const v=JSON.parse(localStorage.getItem(key)||'null');return v&&typeof v==='object'?v:fallback}catch(e){return fallback}}
 function cleanUsername(v){return String(v||'').trim().replace(/\s+/g,'_').toLowerCase()}
@@ -225,32 +229,56 @@ function nowMs(){return Date.now()-serverSkew}
 function isOnline(u){return !!u&&u.online===true&&u.lastSeenMs>0&&(nowMs()-u.lastSeenMs)<ONLINE_WINDOW}
 function refreshOnline(){demoUsers=allUsers.filter(isOnline)}
 function updateCounts(){const n=demoUsers.length+(currentUser?1:0);$('globalOnlineCount').textContent='● Online: '+n;$('onlineCount').textContent='● Online: '+n}
-function updateChatStatus(){if(!selected||!$('chatApp').classList.contains('show'))return;const u=allUsers.find(x=>x.id.toLowerCase()===selected.toLowerCase());$('chatStatus').textContent=isBlockedByMe(selected)?currentUser+' has blocked u':isBlockedByOther(selected)?'Blocked You':isOnline(u)?'Online':'Offline'}
+function lastSeenText(u){
+const ms=u&&u.lastSeenMs;if(!ms)return'Offline';
+const d=new Date(ms),n=new Date(),y=new Date(n.getFullYear(),n.getMonth(),n.getDate()-1),t=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+if(d.toDateString()===n.toDateString())return'Last seen today, '+t;
+if(d.toDateString()===y.toDateString())return'Last seen yesterday, '+t;
+return'Last seen '+d.toLocaleDateString([],{day:'2-digit',month:'short'})+', '+t
+}
+function updateChatStatus(){if(!selected||!$('chatApp').classList.contains('show'))return;const u=allUsers.find(x=>x.id.toLowerCase()===selected.toLowerCase());$('chatStatus').textContent=isBlockedByMe(selected)?currentUser+' has blocked u':isBlockedByOther(selected)?'Blocked You':isOnline(u)?'Online':lastSeenText(u)}
 function setBusy(v){busy=v;$('loginBtn').disabled=v;$('signupBtn').disabled=v}
 function clearTimer(t){if(t)clearTimeout(t)}
 function usernameEmail(u){return cleanUsername(u)+'@nexachat.invalid'}
 
+function dataUrlToBlob(u){
+const i=u.indexOf(','),meta=u.slice(5,i),t=meta.split(';')[0],type=/^video\//.test(t)?t:'video/mp4',bin=atob(u.slice(i+1)),len=bin.length,arr=new Uint8Array(len);
+for(let k=0;k<len;k++)arr[k]=bin.charCodeAt(k);
+return new Blob([arr],{type})
+}
+async function chunkWrite(parentRef,dataUrl){
+const n=Math.ceil(dataUrl.length/CHUNK_SIZE),jobs=[];
+for(let i=0;i<n;i++)jobs.push(setDoc(doc(parentRef,'chunks','c'+i),{i,d:dataUrl.slice(i*CHUNK_SIZE,(i+1)*CHUNK_SIZE)}));
+try{await Promise.all(jobs)}catch(e){for(let i=0;i<n;i++)deleteDoc(doc(parentRef,'chunks','c'+i)).catch(()=>{});throw e}
+return n
+}
+function chunkPrime(p,u){chunkCache.set(p.join('/'),Promise.resolve(URL.createObjectURL(dataUrlToBlob(u))))}
+function chunkLoad(pathArr,n){
+const key=pathArr.join('/');if(chunkCache.has(key))return chunkCache.get(key);
+const p=(async()=>{
+let snap=null;
+for(let a=0;a<6;a++){snap=await getDocs(query(collection(db,...pathArr,'chunks'),orderBy('i','asc')));if(snap.size>=n)break;await new Promise(r=>setTimeout(r,1500))}
+if(!snap||snap.size<n)throw new Error('Video chunks missing');
+let s='';snap.forEach(d=>{s+=String(d.data().d||'')});
+return URL.createObjectURL(dataUrlToBlob(s))
+})();
+chunkCache.set(key,p);p.catch(()=>chunkCache.delete(key));return p
+}
+async function deleteWithChunks(ref,n){
+n=parseInt(n,10)||0;
+if(n>0)await Promise.all(Array.from({length:n},(_,i)=>deleteDoc(doc(ref,'chunks','c'+i)).catch(()=>{})));
+await deleteDoc(ref)
+}
+
 const themes=[
+{name:'White Theme',bg:'#f0f2f5',panel:'#ffffff',top:'#ffffff',text:'#111b21',muted:'#667781',accent:'#00a884',me:'#d9fdd3',other:'#ffffff',input:'#f0f2f5',chat:'#efeae2',head:'#f0f2f5',privme:'#d9fdd3',privother:'#ffffff',privinput:'#f0f2f5',soft:'#e9edef'},
+{name:'Golden Luxury',bg:'#1d1708',panel:'#35290e',top:'#493816',text:'#fff8e1',muted:'#e7d6a5',accent:'#fbbf24',me:'#854d0e',other:'#40331a',input:'#251d0b',chat:'#1d1708',head:'#493816',privme:'#854d0e',privother:'#40331a',privinput:'#59451d',soft:'#090702'},
 {name:'Midnight Neon',bg:'#020611',panel:'#0f1733',top:'#101a3a',text:'#ffffff',muted:'#a5b4d4',accent:'#22d3ee',me:'#0e7490',other:'#1a2040',input:'#070e28',chat:'#0b141a',head:'#202c33',privme:'#005c4b',privother:'#202c33',privinput:'#2a3942',soft:'#000'},
-{name:'Pure White',bg:'#f4f6fa',panel:'#ffffff',top:'#e2e8f0',text:'#111827',muted:'#475569',accent:'#2563eb',me:'#dbeafe',other:'#ffffff',input:'#f8fafc',chat:'#f1f5f9',head:'#e2e8f0',privme:'#bbf7d0',privother:'#ffffff',privinput:'#ffffff',soft:'#111827'},
 {name:'Ocean Blue',bg:'#061a2d',panel:'#0b2944',top:'#103858',text:'#ffffff',muted:'#b9d9f2',accent:'#38bdf8',me:'#075985',other:'#123955',input:'#071e32',chat:'#071e32',head:'#103858',privme:'#075e54',privother:'#173c52',privinput:'#23485e',soft:'#020c16'},
 {name:'Purple Dream',bg:'#160b2b',panel:'#281545',top:'#36205a',text:'#ffffff',muted:'#decaf8',accent:'#c084fc',me:'#7e22ce',other:'#35204b',input:'#1c1032',chat:'#160b2b',head:'#36205a',privme:'#6b21a8',privother:'#35204b',privinput:'#42245d',soft:'#08040e'},
-{name:'Rose Pink',bg:'#2a101c',panel:'#42172b',top:'#542039',text:'#ffffff',muted:'#f7c9dc',accent:'#fb7185',me:'#9d174d',other:'#51233b',input:'#30111f',chat:'#2a101c',head:'#542039',privme:'#9d174d',privother:'#51233b',privinput:'#663049',soft:'#10060b'},
-{name:'Emerald',bg:'#071b13',panel:'#103426',top:'#164832',text:'#ffffff',muted:'#b6e6c9',accent:'#34d399',me:'#047857',other:'#194633',input:'#09251a',chat:'#071b13',head:'#164832',privme:'#047857',privother:'#194633',privinput:'#24533e',soft:'#020b07'},
-{name:'Ruby Red',bg:'#210909',panel:'#3b1111',top:'#511717',text:'#ffffff',muted:'#f5caca',accent:'#f87171',me:'#991b1b',other:'#4b2020',input:'#2b0b0b',chat:'#210909',head:'#511717',privme:'#991b1b',privother:'#4b2020',privinput:'#602a2a',soft:'#0b0202'},
-{name:'Golden Luxury',bg:'#1d1708',panel:'#35290e',top:'#493816',text:'#fff8e1',muted:'#e7d6a5',accent:'#fbbf24',me:'#854d0e',other:'#40331a',input:'#251d0b',chat:'#1d1708',head:'#493816',privme:'#854d0e',privother:'#40331a',privinput:'#59451d',soft:'#090702'},
-{name:'Carbon Black',bg:'#101010',panel:'#202020',top:'#303030',text:'#ffffff',muted:'#c0c0c0',accent:'#e5e7eb',me:'#404040',other:'#252525',input:'#151515',chat:'#101010',head:'#303030',privme:'#374151',privother:'#252525',privinput:'#404040',soft:'#000000'},
-{name:'Mint Fresh',bg:'#eafaf4',panel:'#ffffff',top:'#d1fae5',text:'#12352a',muted:'#356354',accent:'#059669',me:'#a7f3d0',other:'#ffffff',input:'#f0fdf4',chat:'#eafaf4',head:'#d1fae5',privme:'#a7f3d0',privother:'#ffffff',privinput:'#ffffff',soft:'#12352a'},
-{name:'Sky Light',bg:'#eff8ff',panel:'#ffffff',top:'#dbeafe',text:'#102a43',muted:'#486581',accent:'#0284c7',me:'#bae6fd',other:'#ffffff',input:'#f8fbff',chat:'#eff8ff',head:'#dbeafe',privme:'#bbf7d0',privother:'#ffffff',privinput:'#ffffff',soft:'#102a43'},
-{name:'Lavender Light',bg:'#f5f0ff',panel:'#ffffff',top:'#e9ddff',text:'#2e1953',muted:'#68558b',accent:'#7c3aed',me:'#ddd6fe',other:'#ffffff',input:'#faf7ff',chat:'#f5f0ff',head:'#e9ddff',privme:'#c4b5fd',privother:'#ffffff',privinput:'#ffffff',soft:'#2e1953'},
-{name:'Sunset Orange',bg:'#24120a',panel:'#402012',top:'#5b2d17',text:'#ffffff',muted:'#f5d0b5',accent:'#fb923c',me:'#c2410c',other:'#4c2b1b',input:'#30170b',chat:'#24120a',head:'#5b2d17',privme:'#9a3412',privother:'#4c2b1b',privinput:'#673b26',soft:'#100702'},
-{name:'Cyber Green',bg:'#020d08',panel:'#082116',top:'#103723',text:'#e7ffe9',muted:'#9dd7a9',accent:'#39ff88',me:'#075e37',other:'#103321',input:'#03170d',chat:'#020d08',head:'#103723',privme:'#075e37',privother:'#103321',privinput:'#19472e',soft:'#000'},
-{name:'Ice Blue',bg:'#071722',panel:'#102b3b',top:'#193c50',text:'#f0fbff',muted:'#b4d9e8',accent:'#67e8f9',me:'#155e75',other:'#173747',input:'#091e2a',chat:'#071722',head:'#193c50',privme:'#155e75',privother:'#173747',privinput:'#245064',soft:'#02080c'},
-{name:'Royal Purple',bg:'#100824',panel:'#21113e',top:'#301853',text:'#ffffff',muted:'#d6c3f4',accent:'#a78bfa',me:'#6d28d9',other:'#2b1b45',input:'#180c2d',chat:'#100824',head:'#301853',privme:'#6d28d9',privother:'#2b1b45',privinput:'#3a2458',soft:'#05020b'},
-{name:'Forest',bg:'#111b0b',panel:'#233419',top:'#304823',text:'#f7fee7',muted:'#d0e1b5',accent:'#a3e635',me:'#3f6212',other:'#293c20',input:'#182410',chat:'#111b0b',head:'#304823',privme:'#3f6212',privother:'#293c20',privinput:'#3c512e',soft:'#050801'},
-{name:'Cherry Blossom',bg:'#fff1f5',panel:'#ffffff',top:'#fce7f3',text:'#501b35',muted:'#8b4567',accent:'#db2777',me:'#fbcfe8',other:'#ffffff',input:'#fff7fa',chat:'#fff1f5',head:'#fce7f3',privme:'#fbcfe8',privother:'#ffffff',privinput:'#ffffff',soft:'#501b35'},
-{name:'Slate Grey',bg:'#111827',panel:'#1f2937',top:'#374151',text:'#ffffff',muted:'#d1d5db',accent:'#9ca3af',me:'#374151',other:'#273449',input:'#111827',chat:'#111827',head:'#374151',privme:'#374151',privother:'#273449',privinput:'#4b5563',soft:'#030712'},
-{name:'Aqua Teal',bg:'#062323',panel:'#0b3939',top:'#105151',text:'#f0ffff',muted:'#a9dada',accent:'#2dd4bf',me:'#0f766e',other:'#164747',input:'#082d2d',chat:'#062323',head:'#105151',privme:'#0f766e',privother:'#164747',privinput:'#226060',soft:'#010d0d'}
+{name:'Emerald Pro',bg:'#071b13',panel:'#103426',top:'#164832',text:'#ffffff',muted:'#b6e6c9',accent:'#34d399',me:'#047857',other:'#194633',input:'#09251a',chat:'#071b13',head:'#164832',privme:'#047857',privother:'#194633',privinput:'#24533e',soft:'#020b07'},
+{name:'Cyberpunk Red',bg:'#210909',panel:'#3b1111',top:'#511717',text:'#ffffff',muted:'#f5caca',accent:'#f87171',me:'#991b1b',other:'#4b2020',input:'#2b0b0b',chat:'#210909',head:'#511717',privme:'#991b1b',privother:'#4b2020',privinput:'#602a2a',soft:'#0b0202'},
+{name:'Carbon Dark',bg:'#101010',panel:'#202020',top:'#303030',text:'#ffffff',muted:'#c0c0c0',accent:'#e5e7eb',me:'#404040',other:'#252525',input:'#151515',chat:'#101010',head:'#303030',privme:'#374151',privother:'#252525',privinput:'#404040',soft:'#000000'}
 ];
 
 function applyTheme(index){
@@ -271,14 +299,44 @@ b.style.background=t.panel;b.style.color=t.text;b.style.borderColor=i===chosen?'
 b.addEventListener('click',()=>applyTheme(i));grid.appendChild(b);
 });
 }
+
 let inboxSoundEnabled=true;
 try{inboxSoundEnabled=localStorage.getItem('nexa_inbox_sound')!=='off'}catch(e){}
 function updateSoundToggle(){const b=$('soundToggle');if(!b)return;b.textContent=inboxSoundEnabled?'ON':'OFF';b.className='setting-toggle'+(inboxSoundEnabled?' on':'')}
 window.toggleInboxSound=function(){inboxSoundEnabled=!inboxSoundEnabled;try{localStorage.setItem('nexa_inbox_sound',inboxSoundEnabled?'on':'off')}catch(e){}updateSoundToggle()};
-window.showSettings=function(){$('inboxOptions').style.display='none';$('settingsView').style.display='flex';renderThemeChoices();updateSoundToggle();setTimeout(updateFocus,50)};
+
+let spamProtectionEnabled=true;
+try{spamProtectionEnabled=localStorage.getItem('nexa_spam_prot')!=='off'}catch(e){}
+function updateSpamToggle(){const b=$('spamToggle');if(!b)return;b.textContent=spamProtectionEnabled?'ON':'OFF';b.className='setting-toggle'+(spamProtectionEnabled?' on':'')}
+window.toggleSpamProtection=function(){
+  if(spamProtectionEnabled){
+    if(!confirm('Spam Protection ON ⚠️: only users in your chat list can message you; new users cannot message you, but you can message everyone — continue?')) return;
+  }
+  spamProtectionEnabled=!spamProtectionEnabled;
+  try{localStorage.setItem('nexa_spam_prot',spamProtectionEnabled?'on':'off')}catch(e){}
+  updateSpamToggle();
+};
+
+window.showSettings=function(){
+  $('inboxOptions').style.display='none';
+  $('settingsView').style.display='flex';
+  renderThemeChoices();
+  updateSoundToggle();
+  updateSpamToggle();
+  $('themeGrid').style.display='none';
+  setTimeout(updateFocus,50);
+};
 window.closeSettings=function(){$('settingsView').style.display='none';updateFocus()};
 try{applyTheme(localStorage.getItem('nexa_theme')||0)}catch(e){applyTheme(0)}
 updateSoundToggle();
+updateSpamToggle();
+
+document.addEventListener('click', e => {
+  if(e.target && e.target.id === 'themeSectionTitle'){
+    const tg = $('themeGrid');
+    tg.style.display = tg.style.display === 'none' ? 'grid' : 'none';
+  }
+});
 
 function unlockAudio(){try{if(!audioCtx){const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;audioCtx=new AC()}if(audioCtx.state==='suspended')audioCtx.resume()}catch(e){}}
 ['click','touchstart','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
@@ -307,6 +365,7 @@ snap.docChanges().forEach(ch=>{
 if(ch.type!=='added')return;
 const m=ch.doc.data({serverTimestamps:'estimate'})||{};
 const incoming=String(m.from||'').toLowerCase()===id.toLowerCase()&&String(m.to||'').toLowerCase()===me;
+if(incoming&&m.status==='sent'&&!snap.metadata.fromCache)updateDoc(ch.doc.ref,{status:'delivered'}).catch(()=>{});
 if(!incoming||m.status==='seen'||!shouldRing(m,rec.baselined))return;
 const key=chatId+'/'+ch.doc.id;if(notifiedMsgs.has(key))return;notifiedMsgs.add(key);if(blocked)return;
 if(viewing)playSound('soft');else playSound('ring');
@@ -378,6 +437,8 @@ if(busy)return;$('inboxOptions').style.display='none';if(!confirm('Do you want t
 try{stopGlobalListeners();stopPrivateListeners();stopInboxListeners();await setOffline(old);if(usersUnsub)usersUnsub();usersUnsub=null;clearTimer(globalTypingTimer);clearTimer(privateTypingTimer);selected=null;selectedInbox=null;selectedMsgIndex=null;replyTo=null;try{localStorage.removeItem('nexa_current')}catch(e){}await signOut(auth)}catch(e){showError('Could not log out.',e)}finally{setBusy(false)}
 });
 
+function showAuth(){document.querySelectorAll('.app').forEach(a=>a.classList.remove('show'));$('auth-screen').style.display='flex'}
+
 onAuthStateChanged(auth,async user=>{
 const version=++authStateVersion;authReady=true;
 if(!user){
@@ -395,9 +456,29 @@ initUsersListener();syncInboxListeners();
 if(document.querySelector('.app.show'))$('auth-screen').style.display='none';else showApp('home')
 });
 
+/* ===== CLEANUP (100% working purge) ===== */
+const lastPurge={};
+const delDoc=d=>deleteWithChunks(d.ref,d.data().vidChunks).catch(()=>{});
+async function purge(colRef,keep,maxAge){
+ try{
+  const head=await getDocs(query(colRef,orderBy('createdAt','desc'),limit(keep))),now=nowMs(),jobs=[];
+  head.docs.forEach(d=>{const c=d.data({serverTimestamps:'estimate'}).createdAt;if(maxAge&&c&&c.toMillis&&now-c.toMillis()>maxAge)jobs.push(delDoc(d))});
+  let last=head.docs[head.docs.length-1];
+  if(head.size>=keep&&last)for(let r=0;r<10;r++){
+   const s=await getDocs(query(colRef,orderBy('createdAt','desc'),startAfter(last),limit(100)));
+   if(!s.size)break;s.docs.forEach(d=>jobs.push(delDoc(d)));
+   if(s.size<100)break;last=s.docs[s.docs.length-1]}
+  await Promise.all(jobs)
+ }catch(e){console.warn('purge',e)}
+}
+function cleanupGlobalChat(){const t=Date.now();if(t-(lastPurge.g||0)<20000)return;lastPurge.g=t;purge(collection(db,'globalChat'),KEEP_MSGS,0)}
+function cleanupPrivateChat(chatId){const t=Date.now();if(t-(lastPurge[chatId]||0)<20000)return;lastPurge[chatId]=t;purge(collection(db,'privateChats',chatId,'messages'),KEEP_MSGS,TWO_DAYS)}
+setInterval(()=>{if(!currentUser)return;cleanupGlobalChat();getContacts().forEach(id=>isValidUsername(id)&&cleanupPrivateChat(getChatId(currentUser,id)))},600000);
+
 function initGlobalListener(){
 if(globalUnsub)globalUnsub();
-const q=query(collection(db,'globalChat'),orderBy('createdAt','desc'),limit(10));globalUnsub=onSnapshot(q,snap=>{
+cleanupGlobalChat();
+const q=query(collection(db,'globalChat'),orderBy('createdAt','desc'),limit(KEEP_MSGS));globalUnsub=onSnapshot(q,snap=>{
 const docs=[];snap.forEach(d=>docs.push({id:d.id,data:d.data({serverTimestamps:'estimate'})||{}}));docs.reverse();
 const area=$('globalArea');area.replaceChildren();
 docs.forEach(item=>{
@@ -421,7 +502,7 @@ const input=$('globalInput'),text=input.value.trim();if(!currentUser)return aler
 const match=text.match(/@([a-zA-Z0-9_]{2,25})(?![a-zA-Z0-9_])/);let mentionVal=match?match[1]:null;
 if(mentionVal&&!allUsers.some(u=>u.id.toLowerCase()===mentionVal.toLowerCase()))mentionVal=null;
 input.value='';$('mentionPopup').style.display='none';mentionOpen=false;stopGlobalTyping();
-try{await addDoc(collection(db,'globalChat'),{name:currentUser,text,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),mention:mentionVal,createdAt:serverTimestamp()})}catch(e){if(!input.value)input.value=text;showError('Could not send global message.',e)}
+try{await addDoc(collection(db,'globalChat'),{name:currentUser,text,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),mention:mentionVal,createdAt:serverTimestamp()});cleanupGlobalChat()}catch(e){if(!input.value)input.value=text;showError('Could not send global message.',e)}
 }
 window.sendGlobal=sendGlobal;
 function openMention(){
@@ -477,7 +558,7 @@ const avatar=document.createElement('div');avatar.className='avatar';avatar.text
 const info=document.createElement('div');info.style.flex='1';info.style.minWidth='0';
 const name=document.createElement('div');name.style.cssText='color:var(--text);font-weight:'+(unread>0?'900':'700')+';overflow-wrap:anywhere';name.textContent=u.name+(inbox&&bm?' ('+currentUser+' has blocked u)':'')+(inbox&&bo&&!bm?' (Blocked You)':'');
 const detail=document.createElement('div');detail.style.cssText='font-size:10px;color:'+(unread>0?'#4ade80':'var(--muted)')+';font-weight:'+(unread>0?'700':'400');
-detail.textContent=inbox&&bm?'🚫 '+currentUser+' has blocked u':inbox&&bo?'🚫 Blocked You':unread>0?'🔔 '+unread+' new • '+previewText(u.id):inbox&&previewText(u.id)?previewText(u.id):(on?'● Online':'○ Offline')+' • ID: '+u.id;
+detail.textContent=inbox&&bm?'🚫 '+currentUser+' has blocked u':inbox&&bo?'🚫 Blocked You':unread>0?'🔔 '+unread+' new • '+previewText(u.id):inbox&&previewText(u.id)?previewText(u.id):(on?'● Online':'○ '+lastSeenText(u))+' • ID: '+u.id;
 info.append(name,detail);row.append(avatar,info);
 const status=document.createElement('div');status.className='status '+(on?'online':'offline');status.textContent=on?'● Online':'○ Offline';row.appendChild(status);
 if(unread>0){const badge=document.createElement('div');badge.className='unread-badge';badge.textContent=unread>99?'99+':String(unread);row.appendChild(badge)}
@@ -507,69 +588,45 @@ window.removeFromInbox=removeFromInbox;
 
 window.openChat=function(id){
 if(!isValidUsername(id))return alert('Invalid username.');stopPrivateListeners();selected=id;selectedInbox=id;selectedMsgIndex=null;window._selectedDoc=null;replyTo=null;messageCache=[];unreadMap[id]=0;$('chatInput').value='';$('chatInput').placeholder='Type a message';$('chatMsgs').replaceChildren();
-const bm=isBlockedByMe(id),bo=isBlockedByOther(id);$('chatName').textContent=id;refreshOnline();const u=allUsers.find(x=>x.id.toLowerCase()===id.toLowerCase());$('chatStatus').textContent=bm?currentUser+' has blocked u':bo?'Blocked You':isOnline(u)?'Online':'Offline';showApp('chat');
+const bm=isBlockedByMe(id),bo=isBlockedByOther(id);$('chatName').textContent=id;refreshOnline();const u=allUsers.find(x=>x.id.toLowerCase()===id.toLowerCase());$('chatStatus').textContent=bm?currentUser+' has blocked u':bo?'Blocked You':isOnline(u)?'Online':lastSeenText(u);showApp('chat');
 if(bm||bo){const n=document.createElement('div');n.style.cssText='background:#3f1a1a;border:1px solid #ff4444;color:#ffaaaa;padding:14px;border-radius:10px;text-align:center;margin:30px 10px';n.textContent=bm?'🚫 '+currentUser+' has blocked u. Messages will not be delivered.':'🚫 This user has blocked you. Messages will not be delivered.';$('chatMsgs').appendChild(n);return}
 initPrivateListener();initPrivateTyping()
 };
 function getChatId(a,b){return[a.toLowerCase(),b.toLowerCase()].sort().join('_')}
 function markChatSeen(){if(!currentUser||!selected||document.visibilityState!=='visible'||!$('chatApp').classList.contains('show'))return;const id=getChatId(currentUser,selected),me=currentUser.toLowerCase();messageCache.forEach(item=>{const m=item.data;if(item.id&&String(m.to||'').toLowerCase()===me&&m.status!=='seen')updateDoc(doc(db,'privateChats',id,'messages',item.id),{status:'seen'}).catch(e=>console.warn(e))})}
 
-async function cleanupPrivateChat(chatId) {
-    try {
-        const q = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'asc'));
-        const snap = await getDocs(q);
-        const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
-        const now = Date.now();
-
-        let docsArray = [];
-        snap.forEach(d => docsArray.push({ ref: d.ref, data: d.data() }));
-
-        for (let item of docsArray) {
-            const m = item.data;
-            if (m.createdAt && typeof m.createdAt.toMillis === 'function') {
-                if (now - m.createdAt.toMillis() > TWO_DAYS) {
-                    await deleteDoc(item.ref);
-                }
-            }
-        }
-
-        const q2 = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'asc'));
-        const snap2 = await getDocs(q2);
-        if (snap2.size > 15) {
-            const excessCount = snap2.size - 15;
-            let deletedCount = 0;
-            snap2.forEach(async (d) => {
-                if (deletedCount < excessCount) {
-                    await deleteDoc(d.ref);
-                    deletedCount++;
-                }
-            });
-        }
-    } catch (e) {
-        console.warn("Cleanup error:", e);
-    }
-}
-
-function initPrivateListener(){
-if(privateUnsub)privateUnsub();if(!selected||!currentUser)return;const chatId=getChatId(currentUser,selected);
-cleanupPrivateChat(chatId);
-const q=query(collection(db,'privateChats',chatId,'messages'),orderBy('createdAt','desc'),limit(10));
-privateUnsub=onSnapshot(q,snap=>{
-const docs=[];snap.forEach(d=>docs.push({id:d.id,data:d.data({serverTimestamps:'estimate'})||{}}));docs.reverse();const area=$('chatMsgs');area.replaceChildren();messageCache=docs;
-docs.forEach(item=>{
+function buildBubble(item,chatId){
 const m=item.data,me=String(m.from||'').toLowerCase()===currentUser.toLowerCase(),bubble=document.createElement('div');bubble.className='c-msg '+(me?'me':'other');bubble.tabIndex=0;
 if(m.replyTo){const r=document.createElement('div');r.className='reply-preview';r.textContent='↩ '+String(m.replyTo);bubble.appendChild(r)}
 const body=document.createElement('div');
 if(m.type==='image'&&m.img){const im=document.createElement('img');im.src=m.img;im.style.cssText='max-width:100%;border-radius:8px;display:block';im.addEventListener('click',e=>{e.stopPropagation();window.nxViewMedia('image',m.img)});body.appendChild(im)}
-else if(m.type==='video'&&m.vid){const vd=document.createElement('video');vd.src=m.vid;vd.controls=true;vd.style.cssText='max-width:100%;border-radius:8px;display:block';vd.addEventListener('click',e=>e.stopPropagation());body.appendChild(vd)}
+else if(m.type==='video'&&(m.vid||m.vidChunks)){const vd=document.createElement('video');vd.controls=true;vd.playsInline=true;vd.preload='metadata';vd.style.cssText='max-width:100%;border-radius:8px;display:block';vd.addEventListener('click',e=>e.stopPropagation());
+if(m.vidChunks){if(m.thumb)vd.poster=m.thumb;chunkLoad(['privateChats',chatId,'messages',item.id],m.vidChunks).then(u=>{vd.src=u}).catch(e=>console.warn('Video load failed:',e))}else vd.src=m.vid;
+body.appendChild(vd)}
 else if(m.type==='voice'&&m.audio){const au=document.createElement('audio');au.src=m.audio;au.controls=true;au.style.cssText='max-width:100%;height:36px';au.addEventListener('click',e=>e.stopPropagation());body.appendChild(au)}
 else body.textContent=String(m.text||'');bubble.appendChild(body);
 if(m.edited){const ed=document.createElement('small');ed.style.color='var(--muted)';ed.textContent=' (edited)';bubble.appendChild(ed)}
 const meta=document.createElement('div');meta.className='c-meta';const time=document.createElement('span');time.textContent=String(m.time||'');meta.appendChild(time);
 if(me){const tick=document.createElement('span');tick.className='tick'+(m.status==='seen'?' seen':m.status==='delivered'?' delivered':'');tick.textContent=m.status==='seen'||m.status==='delivered'?'✓✓':'✓';meta.appendChild(tick)}
-bubble.appendChild(meta);bubble.addEventListener('click',()=>{selectedMsgIndex=item.id;window._selectedDoc=m;document.querySelectorAll('#chatMsgs .c-msg').forEach(x=>x.classList.remove('active'));bubble.classList.add('active')});area.appendChild(bubble)
-});
-area.scrollTop=area.scrollHeight;markChatSeen()
+bubble.appendChild(meta);
+bubble.addEventListener('click',()=>{selectedMsgIndex=item.id;window._selectedDoc=m;document.querySelectorAll('#chatMsgs .c-msg').forEach(x=>x.classList.remove('active'));bubble.classList.add('active')});
+return bubble
+}
+
+function initPrivateListener(){
+if(privateUnsub)privateUnsub();if(!selected||!currentUser)return;const chatId=getChatId(currentUser,selected);
+cleanupPrivateChat(chatId);
+const q=query(collection(db,'privateChats',chatId,'messages'),orderBy('createdAt','desc'),limit(KEEP_MSGS));
+privateUnsub=onSnapshot(q,snap=>{
+ const docs=[];snap.forEach(d=>docs.push({id:d.id,data:d.data({serverTimestamps:'estimate'})||{}}));docs.reverse();messageCache=docs;
+ const area=$('chatMsgs'),ids=new Set(docs.map(x=>x.id));
+ [...area.children].forEach(c=>{if(!c.dataset.id||!ids.has(c.dataset.id))c.remove()});
+ docs.forEach(item=>{
+  const b=area.querySelector('[data-id="'+item.id+'"]'),m=item.data,sig=(m.text||'')+'|'+(m.edited?1:0)+'|'+(m.type||'');
+  if(b&&b.dataset.sig===sig){const t=b.querySelector('.tick');if(t){t.className='tick'+(m.status==='seen'?' seen':m.status==='delivered'?' delivered':'');t.textContent=m.status==='seen'||m.status==='delivered'?'✓✓':'✓'}return}
+  const nb=buildBubble(item,chatId);nb.dataset.id=item.id;nb.dataset.sig=sig;
+  if(b)b.replaceWith(nb);else area.appendChild(nb)});
+ area.scrollTop=area.scrollHeight;markChatSeen()
 },e=>{console.error(e);showError('Could not load private messages.',e)})
 }
 function initPrivateTyping(){
@@ -582,7 +639,7 @@ function replyMsg(){if(!window._selectedDoc)return;replyTo=String(window._select
 window.replyMsg=replyMsg;
 async function deleteMsg(){
 if(!selectedMsgIndex||!window._selectedDoc||!selected)return;if(String(window._selectedDoc.from||'').toLowerCase()!==currentUser.toLowerCase()){alert('You can only delete your own messages.');$('chatOptions').style.display='none';return}
-const id=getChatId(currentUser,selected);if(confirm('Delete this message?'))try{await deleteDoc(doc(db,'privateChats',id,'messages',selectedMsgIndex));selectedMsgIndex=null;window._selectedDoc=null}catch(e){showError('Could not delete message.',e)}$('chatOptions').style.display='none'
+const id=getChatId(currentUser,selected),chunksN=window._selectedDoc.vidChunks;if(confirm('Delete this message?'))try{await deleteWithChunks(doc(db,'privateChats',id,'messages',selectedMsgIndex),chunksN);selectedMsgIndex=null;window._selectedDoc=null}catch(e){showError('Could not delete message.',e)}$('chatOptions').style.display='none'
 }
 window.deleteMsg=deleteMsg;
 async function editMsg(){
@@ -592,14 +649,11 @@ try{await updateDoc(doc(db,'privateChats',getChatId(currentUser,selected),'messa
 }
 window.editMsg=editMsg;
 
-window.sendChat=async function(){
+window.sendChat=function(){
 const input=$('chatInput'),text=input.value.trim();if(!currentUser)return alert('Please log in first.');if(!text||!selected)return;if(text.length>2000)return alert('Message is too long. Maximum 2000 characters.');if(isBlockedByMe(selected)||isBlockedByOther(selected)){alert('🚫 Blocked');return}
-const id=getChatId(currentUser,selected),replyValue=replyTo;input.value='';replyTo=null;input.placeholder='Type a message';stopPrivateTyping();
-try{
-    await addDoc(collection(db,'privateChats',id,'messages'),{from:currentUser,to:selected,text,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),status:'sent',replyTo:replyValue,edited:false,createdAt:serverTimestamp()});
-    await cleanupPrivateChat(id);
-    addContact(selected)
-}catch(e){if(!input.value)input.value=text;if(!replyTo)replyTo=replyValue;showError('Could not send private message.',e)}
+const id=getChatId(currentUser,selected),replyValue=replyTo,to=selected;input.value='';replyTo=null;input.placeholder='Type a message';stopPrivateTyping();
+addContact(to);
+addDoc(collection(db,'privateChats',id,'messages'),{from:currentUser,to,text,time:new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}),status:'sent',replyTo:replyValue,edited:false,createdAt:serverTimestamp()}).then(()=>cleanupPrivateChat(id)).catch(e=>{if(!input.value)input.value=text;showError('Could not send private message.',e)})
 };
 $('chatSend').addEventListener('click',()=>window.sendChat());
 $('chatInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();window.sendChat()}});
@@ -662,6 +716,9 @@ window.addEventListener('pagehide',()=>{if(currentUser){stopGlobalTyping();stopP
 #vbar{height:50px;flex-shrink:0;background:var(--chathead,#202c33);display:none;align-items:center;padding:0 8px;gap:10px}
 #vbar button{height:34px;min-width:34px;border-radius:17px;border:0;font-size:16px;cursor:pointer;padding:0 10px}
 #vLbl{flex:1;color:var(--text);font-size:14px;font-weight:700}
+#chatMediaMenu{position:absolute;bottom:60px;right:8px;background:var(--panel);border:1.5px solid var(--accent);border-radius:12px;padding:8px;display:none;flex-direction:column;gap:6px;z-index:200;width:150px;box-shadow:0 4px 15px rgba(0,0,0,0.5)}
+.chat-menu-btn{background:var(--top);border:1px solid var(--border);color:var(--text);padding:8px 10px;border-radius:8px;font-size:13px;font-weight:700;text-align:left;cursor:pointer}
+.chat-menu-btn:hover{background:var(--input);border-color:var(--accent)}
 </style>
 
 <div id="statusApp" class="app">
@@ -671,10 +728,10 @@ window.addEventListener('pagehide',()=>{if(currentUser){stopGlobalTyping();stopP
   <div id="myStView" class="nx-ov">
     <div class="top-g"><button type="button" class="nx-back" id="myBack">‹</button><h2>My Status</h2><span style="width:30px"></span></div>
     <div class="nx-body" id="myStBody">
-      <!-- Dynamic My Status Items Container -->
-      <button type="button" class="nx-big" id="newStBtn" style="background:#00a884;color:#000;border-color:#00a884;text-align:center;">➕ New Status</button>
-      <button type="button" class="nx-big" id="myViewsBtn">👁 Views (0)</button>
       <div id="myViews" style="display:none;flex-direction:column;gap:8px"></div>
+      <button type="button" class="nx-big" id="myViewsBtn">👁 Views (0)</button>
+      <button type="button" class="nx-big" id="newStBtn" style="background:#00a884;color:#000;border-color:#00a884;text-align:center;">➕ New Status</button>
+      <button type="button" class="nx-big" id="delStBtn" style="background:#ef4444;color:#fff;border-color:#ef4444;text-align:center;margin-top:6px;">🗑️ Delete Status</button>
     </div>
   </div>
 
@@ -704,34 +761,27 @@ window.addEventListener('pagehide',()=>{if(currentUser){stopGlobalTyping();stopP
 <input type="file" id="nxVidFile" accept="video/*" style="display:none">
 
 <script type="module">
-import {collection,doc,setDoc,addDoc,deleteDoc,onSnapshot,query,orderBy,limit,serverTimestamp} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import {collection,doc,setDoc,addDoc,deleteDoc,onSnapshot,query,orderBy,limit,serverTimestamp,getDocs} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 const $=id=>document.getElementById(id);
 const nx=()=>window.__nx;
 const DAY=86400000,REACTS=['❤️','😂','😮','👍'],COLORS=['#0e7490','#7e22ce','#be185d','#15803d','#c2410c','#1d4ed8'];
+const MAX_VIDEO_BYTES=10*1024*1024;
 let sts=[],unsub=null,subFor=null,vList=[],vIdx=0,tbg=0;
 
 function compress(file,max,q){return new Promise((res,rej)=>{const fr=new FileReader();fr.onerror=rej;fr.onload=()=>{const im=new Image();im.onerror=rej;im.onload=()=>{const s=Math.min(1,max/Math.max(im.width,im.height)),w=Math.round(im.width*s),h=Math.round(im.height*s),c=document.createElement('canvas');c.width=w;c.height=h;c.getContext('2d').drawImage(im,0,0,w,h);let out=c.toDataURL('image/jpeg',q);while(out.length>700000&&q>.3){q-=.15;out=c.toDataURL('image/jpeg',q)}res(out)};im.src=fr.result};fr.readAsDataURL(file)})}
 
+/* Video: no re-encode -> original quality, instant upload */
 function compressVideo(file){
-  return new Promise((res,rej)=>{
-    const url=URL.createObjectURL(file),vid=document.createElement('video');
-    vid.src=url;vid.muted=true;vid.playsInline=true;
-    vid.onloadedmetadata=()=>{vid.currentTime=0};
-    vid.onseeked=()=>{
-      const c=document.createElement('canvas'),w=Math.min(vid.videoWidth,480),h=Math.min(vid.videoHeight,854);
-      c.width=w;c.height=h;c.getContext('2d').drawImage(vid,0,0,w,h);
-      const thumb=c.toDataURL('image/jpeg',0.5);
-      const fr=new FileReader();
-      fr.onload=()=>{
-        const base=fr.result;
-        if(base.length>5200000){alert('Video bohot bari hai! Kripya 5MB se choti video select karein.');rej(new Error('Too large'))}
-        else res({vid:base,thumb});
-      };
-      fr.onerror=rej;fr.readAsDataURL(file);
-    };
-    vid.onerror=()=>rej(new Error('Video load error'));
-    vid.load();
-  });
+ if(file.size>MAX_VIDEO_BYTES){alert('Video bohot bari hai! 10MB se choti select karein.');return Promise.reject(new Error('Too large'))}
+ const read=new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(new Error('Video read error'));fr.readAsDataURL(file)});
+ const thumb=new Promise(res=>{
+  const url=URL.createObjectURL(file),v=document.createElement('video');let done=false;
+  const fin=t=>{if(done)return;done=true;URL.revokeObjectURL(url);res(t)};
+  v.muted=true;v.playsInline=true;v.preload='auto';
+  v.onloadeddata=()=>{try{v.currentTime=0.1}catch(e){fin('')}};
+  v.onseeked=()=>{try{const s=Math.min(1,480/Math.max(v.videoWidth,v.videoHeight)),c=document.createElement('canvas');c.width=Math.round(v.videoWidth*s);c.height=Math.round(v.videoHeight*s);c.getContext('2d').drawImage(v,0,0,c.width,c.height);fin(c.toDataURL('image/jpeg',.7))}catch(e){fin('')}};
+  v.onerror=()=>fin('');setTimeout(()=>fin(''),1500);v.src=url});
+ return Promise.all([read,thumb]).then(([vid,t])=>({vid,thumb:t}))
 }
 
 function pickImage(cb){const i=$('nxFile');i.value='';i.onchange=()=>{const f=i.files&&i.files[0];if(f)cb(f)};i.click()}
@@ -741,6 +791,13 @@ function fmt(ms){const d=new Date(ms),t=d.toLocaleTimeString([],{hour:'2-digit',
 function photoOf(id){if(id===nx().me())return window.__myPhoto||'';const u=nx().users().find(x=>x.id===id);return(u&&u.photo)||''}
 function mkAv(id,sz){const a=document.createElement('div');a.className='avatar';a.style.width=a.style.height=sz+'px';const p=photoOf(id);if(p){a.style.backgroundImage='url("'+p+'")';a.style.backgroundSize='cover';a.style.backgroundPosition='center'}else a.textContent=id.charAt(0).toUpperCase();return a}
 function el(tag,css,txt){const e=document.createElement(tag);if(css)e.style.cssText=css;if(txt!==undefined)e.textContent=txt;return e}
+function fillStatusVideo(vd,s,autoplay){
+  vd.playsInline=true;
+  if(s.vidChunks){
+    if(s.thumb)vd.poster=s.thumb;
+    nx().chunkLoad(['statuses',s.id],s.vidChunks).then(u=>{vd.src=u;if(autoplay&&vd.play){const p=vd.play();if(p&&p.catch)p.catch(()=>{})}}).catch(e=>console.warn('status video',e))
+  }else vd.src=s.vid
+}
 
 window.nxViewMedia=function(type,src){
   const box=$('nxImg');box.replaceChildren();
@@ -756,7 +813,7 @@ function sub(){
     sts=[];
     snap.forEach(d=>{const x=d.data({serverTimestamps:'estimate'})||{},ms=x.createdAt&&x.createdAt.toMillis?x.createdAt.toMillis():Date.now();
       if(Date.now()-ms<DAY)sts.push(Object.assign({},x,{id:d.id,ms}));
-      else if(x.owner===m)deleteDoc(d.ref).catch(()=>{})});
+      else nx().delWithChunks(d.ref,x.vidChunks).catch(()=>{})});
     renderSt();if($('myStView').style.display==='flex')renderMy()
   },e=>console.warn('status listener',e))
 }
@@ -767,8 +824,17 @@ function renderSt(){
   const g=byOwner(),mine=g[m]||[];
   const my=el('div');my.className='row';my.tabIndex=0;
   const inf=el('div','flex:1;min-width:0');
-  inf.append(el('div','font-weight:800;color:var(--text)','My Status'),el('div','font-size:11px;color:var(--muted)',mine.length?mine.length+' update • '+fmt(mine[mine.length-1].ms):'Tap to add status'));
-  my.append(mkAv(m,46),inf);my.addEventListener('click',openMy);L.appendChild(my);
+  inf.append(el('div','font-weight:800;color:var(--text)','My Status'),el('div','font-size:11px;color:var(--muted)',mine.length?mine.length+' update • '+fmt(mine[mine.length-1].ms):'Tap to view/add status'));
+  my.append(mkAv(m,46),inf);
+  my.addEventListener('click',()=>{
+    if(mine.length > 0) {
+      openViewer(m);
+    } else {
+      openMy();
+    }
+  });
+  L.appendChild(my);
+
   L.appendChild(el('div','font-size:11px;color:var(--muted);padding:6px 4px 0','Friends status'));
   const owners=Object.keys(g).filter(o=>o!==m&&nx().contacts().has(o)&&!nx().blocked(o)).sort((a,b)=>g[b][g[b].length-1].ms-g[a][g[a].length-1].ms);
   if(!owners.length)L.appendChild(el('div','color:var(--muted);text-align:center;padding:20px','No status updates'));
@@ -797,13 +863,23 @@ function showSt(){
   hd.append(b,mkAv(s.owner,38),inf);
   const c=$('svBody');c.replaceChildren();
   if(s.type==='image'){c.style.background='#000';const im=el('img','max-width:100%;max-height:100%;object-fit:contain');im.src=s.img;c.appendChild(im)}
-  else if(s.type==='video'){c.style.background='#000';const vd=el('video','max-width:100%;max-height:100%;object-fit:contain');vd.src=s.vid;vd.controls=true;vd.autoplay=true;c.appendChild(vd)}
+  else if(s.type==='video'){c.style.background='#000';const vd=el('video','max-width:100%;max-height:100%;object-fit:contain');vd.controls=true;vd.autoplay=true;fillStatusVideo(vd,s,true);c.appendChild(vd)}
   else{c.style.background=s.bg||'#0e7490';c.appendChild(el('div','font-size:26px;font-weight:700;text-align:center;padding:24px;overflow-wrap:anywhere;color:#fff',s.text||''))}
   const cur=(s.views&&s.views[m]&&s.views[m].r)||'';
   [...$('svReact').children].forEach(x=>x.classList.toggle('sel',x.dataset.r===cur));
   $('svReact').style.display=s.owner===m?'none':'flex';
+  own.style.display=s.owner===m?'flex':'none';vw.style.display='none';
   if(s.owner!==m&&!(s.views&&s.views[m])){s.views=s.views||{};const v={t:Date.now(),r:''};s.views[m]=v;setDoc(doc(nx().db,'statuses',s.id),{views:{[m]:v}},{merge:true}).catch(()=>{})}
 }
+
+/* My Status full screen: 3 buttons in the middle */
+const own=el('div','position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;gap:14px;z-index:5');
+const vw=el('div','position:absolute;left:0;right:0;bottom:0;max-height:60%;overflow-y:auto;background:rgba(0,0,0,.92);padding:10px;display:none;flex-direction:column;gap:6px;z-index:6');
+[['🗑️','Delete','#ef4444',async()=>{const s=vList[vIdx];if(!s||!confirm('Delete this status?'))return;try{await nx().delWithChunks(doc(nx().db,'statuses',s.id),s.vidChunks);vList.splice(vIdx,1);showSt()}catch(e){alert('Delete failed')}}],
+ ['👁','Views','#374151',()=>{const s=vList[vIdx];vw.replaceChildren();const x=el('button','align-self:flex-end;background:transparent;border:0;color:#fff;font-size:18px','✕ Close');x.onclick=()=>vw.style.display='none';vw.appendChild(x);const vk=Object.keys((s&&s.views)||{});if(!vk.length)vw.appendChild(el('div','color:#aaa;padding:10px','No views yet'));vk.forEach(k=>{const r=el('div');r.className='nx-vrow';const i2=el('div','flex:1');i2.append(el('div','font-weight:700',k),el('div','font-size:10px;opacity:.7',fmt(s.views[k].t)));r.append(mkAv(k,38),i2,el('div','font-size:24px',s.views[k].r||''));vw.appendChild(r)});vw.style.display='flex'}],
+ ['➕','New','#00a884',()=>{closeViewer();$('newStChoice').style.display='flex'}]
+].forEach(([ic,lb,bg,fn])=>{const b=el('button','width:78px;padding:10px 4px;border:0;border-radius:14px;color:#fff;font-weight:800;font-size:12px;background:'+bg+';opacity:.92',ic+'\n'+lb);b.style.whiteSpace='pre';b.onclick=e=>{e.stopPropagation();fn()};own.appendChild(b)});
+$('stViewer').append(own,vw);
 $('svBody').addEventListener('click',()=>{vIdx++;showSt()});
 
 function openMy(){$('myStView').style.display='flex';$('myViews').style.display='none';renderMy()}
@@ -812,12 +888,12 @@ function renderMy(){
   mine.forEach(s=>Object.keys(s.views||{}).forEach(k=>vs.add(k)));
   $('myViewsBtn').textContent='👁 Views ('+vs.size+')';
   
-  // Clear dynamic elements except New Status and Views section headers
   const newStBtn = $('newStBtn');
+  const delStBtn = $('delStBtn');
   const myViewsBtn = $('myViewsBtn');
   const myViews = $('myViews');
   const body = $('myStBody');
-  body.replaceChildren(newStBtn, myViewsBtn, myViews);
+  body.replaceChildren(myViews, myViewsBtn, newStBtn, delStBtn);
 
   if(!mine.length){
     const emptyNotice = el('div','color:var(--muted);text-align:center;padding:10px','No active status.');
@@ -829,34 +905,52 @@ function renderMy(){
     const sec=el('div');sec.className='nx-sec';
     const h=el('div','display:flex;align-items:center;gap:8px;margin-bottom:6px');
     const del=el('button','background:transparent;border:0;font-size:18px;cursor:pointer','🗑️');
-    del.onclick=()=>{if(confirm('Delete this status?'))deleteDoc(doc(nx().db,'statuses',s.id)).catch(()=>alert('Delete failed'))};
+    del.onclick=()=>{if(confirm('Delete this status?'))nx().delWithChunks(doc(nx().db,'statuses',s.id),s.vidChunks).catch(()=>alert('Delete failed'))};
     let titleTxt = '✍️ '+String(s.text||'').slice(0,25);
     if(s.type==='image') titleTxt = '🖼️ Photo Status';
     if(s.type==='video') titleTxt = '📹 Video Status';
     h.append(el('div','flex:1;font-weight:700;font-size:13px;color:var(--text)',titleTxt+' • '+fmt(s.ms)),del);sec.appendChild(h);
     
-    // Preview thumbnail or text inside My Status view
     if(s.type==='image'){
       const im=el('img','max-width:100%;max-height:150px;border-radius:6px;display:block;margin-top:6px;object-fit:cover');
       im.src=s.img; sec.appendChild(im);
     }else if(s.type==='video'){
       const vd=el('video','max-width:100%;max-height:150px;border-radius:6px;display:block;margin-top:6px');
-      vd.src=s.vid; vd.controls=true; sec.appendChild(vd);
+      vd.controls=true;vd.preload='metadata';fillStatusVideo(vd,s,false);sec.appendChild(vd);
     }
 
     const vk=Object.keys(s.views||{}).sort((a,b)=>s.views[b].t-s.views[a].t);
     if(!vk.length)sec.appendChild(el('div','font-size:12px;color:var(--muted);margin-top:6px','No views yet'));
     vk.forEach(k=>{const r=el('div');r.className='nx-vrow';const i2=el('div','flex:1;min-width:0');i2.append(el('div','font-weight:700;font-size:13px;color:var(--text)',k),el('div','font-size:10px;color:var(--muted)',fmt(s.views[k].t)));r.append(mkAv(k,38),i2,el('div','font-size:24px',s.views[k].r||''));sec.appendChild(r)});
     
-    body.insertBefore(sec, myViewsBtn);
+    body.insertBefore(sec, myViews);
   })
 }
 $('myViewsBtn').addEventListener('click',()=>{const b=$('myViews');b.style.display=b.style.display==='flex'?'none':'flex'});
 $('newStBtn').addEventListener('click',()=>{$('newStChoice').style.display='flex'});
+$('delStBtn').addEventListener('click',async()=>{
+  const m=nx().me(),mine=byOwner()[m]||[];
+  if(!mine.length)return alert('Koi status nahi hai delete karne ke liye.');
+  if(confirm('Kya aap apne sabhi active statuses delete karna chahte hain?')){
+    try{
+      await Promise.all(mine.map(s=>nx().delWithChunks(doc(nx().db,'statuses',s.id),s.vidChunks)));
+      alert('Sabhi statuses delete ho gaye ✅');
+    }catch(e){alert('Delete failed')}
+  }
+});
+
 $('stImgBtn').addEventListener('click',()=>pickImage(async f=>{
   try{const img=await compress(f,1000,.7);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'image',img,text:'',views:{},createdAt:serverTimestamp()});$('newStChoice').style.display='none';alert('Image Status uploaded ✅')}catch(e){alert('Upload failed: '+(e.message||e))}}));
 $('stVidBtn').addEventListener('click',()=>pickVideo(async f=>{
-  try{alert('Video compress ho rahi hai, kripya thoda intezaar karein...');const vData=await compressVideo(f);await addDoc(collection(nx().db,'statuses'),{owner:nx().me(),type:'video',vid:vData.vid,text:'',views:{},createdAt:serverTimestamp()});$('newStChoice').style.display='none';alert('Video Status uploaded ✅')}catch(e){console.warn(e)}}));
+  try{
+    const vData=await compressVideo(f);
+    const ref=doc(collection(nx().db,'statuses'));
+    const n=await nx().chunkWrite(ref,vData.vid);
+    nx().prime(['statuses',ref.id],vData.vid);
+    try{await setDoc(ref,{owner:nx().me(),type:'video',vid:'',vidChunks:n,thumb:vData.thumb||'',text:'',views:{},createdAt:serverTimestamp()})}
+    catch(e){nx().delWithChunks(ref,n).catch(()=>{});throw e}
+    $('newStChoice').style.display='none';alert('Video Status uploaded ✅')
+  }catch(e){console.warn(e);if(!e||e.message!=='Too large')alert('Video upload failed: '+((e&&e.message)||e))}}));
 $('stTxtBtn').addEventListener('click',()=>{$('txtArea').value='';$('txtComposer').style.display='flex';$('txtArea').focus()});
 $('txtColor').addEventListener('click',()=>{tbg=(tbg+1)%COLORS.length;$('txtArea').style.background=COLORS[tbg]});
 $('txtUpload').addEventListener('click',async()=>{
@@ -885,27 +979,60 @@ document.addEventListener('keydown',e=>{
   $('inboxOptions').insertBefore(b,$('inboxOptions').firstChild)
 })();
 
-async function sendMedia(extra){
+async function sendMedia(extra,bigVid){
   const m=nx().me(),sel=nx().sel();if(!m||!sel)return false;
   if(nx().blocked(sel)){alert('🚫 Blocked');return false}
+  const chatId=nx().chatId(m,sel);
+  const ref=doc(collection(nx().db,'privateChats',chatId,'messages'));
+  let n=0;
   try{
-    const chatId = nx().chatId(m,sel);
-    await addDoc(collection(nx().db,'privateChats',chatId,'messages'),Object.assign({from:m,to:sel,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),status:'sent',replyTo:null,edited:false,createdAt:serverTimestamp()},extra));
-    await cleanupPrivateChat(chatId);
-    nx().addContact(sel);
-    return true;
+    const payload=Object.assign({from:m,to:sel,time:new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}),status:'sent',replyTo:null,edited:false,createdAt:serverTimestamp()},extra);
+    if(bigVid){n=await nx().chunkWrite(ref,bigVid);nx().prime(['privateChats',chatId,'messages',ref.id],bigVid);payload.vidChunks=n;payload.vid=''}
+    await setDoc(ref,payload);
+  }catch(e){
+    if(n>0)nx().delWithChunks(ref,n).catch(()=>{});
+    alert('Could not send: '+(e.message||e));return false
   }
-  catch(e){alert('Could not send: '+(e.message||e));return false}
+  try{nx().addContact(sel)}catch(e){console.warn(e)}
+  nx().cleanup(chatId);
+  return true
 }
-const bar=document.querySelector('#chatApp .inputbar'),sendBtn=$('chatSend');
-const bImg=document.createElement('button'),bVid=document.createElement('button'),bMic=document.createElement('button');
-bImg.type=bVid.type=bMic.type='button';
-bImg.className=bVid.className=bMic.className='nx-ib';
-bImg.textContent='📷';bVid.textContent='📹';bMic.textContent='🎤';
-bar.insertBefore(bMic,sendBtn);bar.insertBefore(bVid,bMic);bar.insertBefore(bImg,bVid);
 
-bImg.addEventListener('click',()=>{if(!nx().sel())return;pickImage(async f=>{try{const img=await compress(f,1000,.7);await sendMedia({type:'image',img,text:'📷 Photo'})}catch(e){alert('Image error')}})});
-bVid.addEventListener('click',()=>{if(!nx().sel())return;pickVideo(async f=>{try{alert('Video compress ho rahi hai...');const vData=await compressVideo(f);await sendMedia({type:'video',vid:vData.vid,text:'📹 Video'})}catch(e){console.warn(e)}})});
+const bar=document.querySelector('#chatApp .inputbar'),sendBtn=$('chatSend');
+
+const bMenu=document.createElement('button');
+bMenu.type='button';
+bMenu.className='nx-ib';
+bMenu.textContent='📎';
+bar.insertBefore(bMenu,sendBtn);
+
+const menuDiv=document.createElement('div');
+menuDiv.id='chatMediaMenu';
+menuDiv.innerHTML=`
+  <button type="button" class="chat-menu-btn" id="mVoice">🎤 Voice</button>
+  <button type="button" class="chat-menu-btn" id="mImg">🖼️ Image</button>
+  <button type="button" class="chat-menu-btn" id="mVid">📹 Video</button>
+`;
+bar.appendChild(menuDiv);
+
+bMenu.addEventListener('click',e=>{
+  e.stopPropagation();
+  menuDiv.style.display=menuDiv.style.display==='flex'?'none':'flex';
+});
+document.addEventListener('click',e=>{
+  if(!menuDiv.contains(e.target)&&e.target!==bMenu)menuDiv.style.display='none';
+});
+
+$('mImg').addEventListener('click',()=>{
+  menuDiv.style.display='none';
+  if(!nx().sel())return;
+  pickImage(async f=>{try{const img=await compress(f,1000,.7);await sendMedia({type:'image',img,text:'📷 Photo'})}catch(e){alert('Image error')}});
+});
+$('mVid').addEventListener('click',()=>{
+  menuDiv.style.display='none';
+  if(!nx().sel())return;
+  pickVideo(async f=>{try{const vData=await compressVideo(f);await sendMedia({type:'video',vid:'',thumb:vData.thumb||'',text:'📹 Video'},vData.vid)}catch(e){console.warn(e);if(!e||e.message!=='Too large')alert('Video error: '+((e&&e.message)||e))}});
+});
 
 const vbar=document.createElement('div');vbar.id='vbar';
 const vDel=el('button','background:#7f1d1d;color:#fff','🗑️'),vLbl=el('div','',''),vPlay=el('button','background:#374151;color:#fff','▶'),vStop=el('button','background:#dc2626;color:#fff','⏹'),vSend=el('button','background:#00a884;color:#000;font-weight:800','➤');
@@ -922,7 +1049,9 @@ function resetVoice(){
   if(player){player.pause();player=null}
   blob=null;chunks=[];secs=0;vbar.style.display='none';bar.style.display='flex'
 }
-bMic.addEventListener('click',async()=>{
+
+$('mVoice').addEventListener('click',async()=>{
+  menuDiv.style.display='none';
   const sel=nx().sel();if(!sel)return;if(nx().blocked(sel))return alert('🚫 Blocked');
   if(!navigator.mediaDevices||!window.MediaRecorder)return alert('Is device par voice recording support nahi hai.');
   try{stream=await navigator.mediaDevices.getUserMedia({audio:true})}catch(e){return alert('Microphone permission do.')}
@@ -933,6 +1062,7 @@ bMic.addEventListener('click',async()=>{
   rec.start();bar.style.display='none';vbar.style.display='flex';vState('rec');
   tmr=setInterval(()=>{secs++;vLbl.textContent='● '+mmss(secs);if(secs>=60)rec.stop()},1000)
 });
+
 vStop.addEventListener('click',()=>{if(rec&&rec.state==='recording')rec.stop()});
 vDel.addEventListener('click',resetVoice);
 vPlay.addEventListener('click',()=>{
