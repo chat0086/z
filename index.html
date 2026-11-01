@@ -1982,4 +1982,433 @@ els[Math.max(0, Math.min(focusIndex, els.length - 1))].click();
 }
 return;
 }
-if (e.ke
+if (e.key === 'SoftLeft' || e.key === 'ContextMenu') {
+e.preventDefault();
+if ($('inboxApp').classList.contains('show')) {
+if ($('settingsView').style.display === 'flex')
+return;
+toggleInboxOptions();
+}
+else if ($('chatApp').classList.contains('show'))
+toggleChatOptions();
+else if ($('globalApp').classList.contains('show'))
+openMention();
+return;
+}
+if (e.key === 'SoftRight') {
+e.preventDefault();
+backAction();
+return;
+}
+if (e.key === 'Backspace' && !typing) {
+e.preventDefault();
+backAction();
+}
+});
+setInterval(function () { if (currentUser && document.visibilityState === 'visible')
+registerUser().catch(function (e) { return console.warn('Heartbeat failed:', e); }); }, HEARTBEAT_MS);
+setInterval(function () { if (!currentUser)
+return; refreshOnline(); updateCounts(); updateChatStatus(); var sig = allUsers.map(function (u) { return u.id + (isOnline(u) ? '1' : '0') + (u.loc === 'global' ? 'g' : 'p'); }).join(','); if (sig !== lastOnlineSig) {
+lastOnlineSig = sig;
+renderLists();
+} }, 8000);
+document.addEventListener('visibilitychange', function () { if (!currentUser)
+return; if (document.visibilityState === 'visible') {
+registerUser().catch(function (e) { return console.warn(e); });
+try {
+if (audioCtx && audioCtx.state === 'suspended')
+audioCtx.resume();
+}
+catch (e) { }
+if ($('chatApp').classList.contains('show')) {
+unreadMap[selected] = 0;
+markChatSeen();
+updateUnreadBadges();
+}
+}
+else {
+stopGlobalTyping();
+stopPrivateTyping();
+setOffline();
+} });
+window.addEventListener('online', function () { if (currentUser)
+registerUser().catch(function (e) { return console.warn(e); }); });
+window.addEventListener('pagehide', function () { if (currentUser) {
+stopGlobalTyping();
+stopPrivateTyping();
+setDoc(doc(db, 'users', currentUser), { online: false, lastSeen: serverTimestamp() }, { merge: true }).catch(function (e) { return console.warn(e); });
+} });
+})();
+</script>
+<script>
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+return new (P || (P = Promise))(function (resolve, reject) {
+function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+step((generator = generator.apply(thisArg, _arguments || [])).next());
+});
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+function verb(n) { return function (v) { return step([n, v]); }; }
+function step(op) {
+if (f) throw new TypeError("Generator is already executing.");
+while (g && (g = 0, op[0] && (_ = 0)), _) try {
+if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+if (y = 0, t) op = [op[0] & 2, t.value];
+switch (op[0]) {
+case 0: case 1: t = op; break;
+case 4: _.label++; return { value: op[1], done: false };
+case 5: _.label++; y = op[1]; op = [0]; continue;
+case 7: op = _.ops.pop(); _.trys.pop(); continue;
+default:
+if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+if (t[2]) _.ops.pop();
+_.trys.pop(); continue;
+}
+op = body.call(thisArg, _);
+} catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+}
+};
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+if (ar || !(i in from)) {
+if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+ar[i] = from[i];
+}
+}
+return to.concat(ar || Array.prototype.slice.call(from));
+};
+(function () {
+var _this = this;
+var _a = window.__fs, collection = _a.collection, doc = _a.doc, setDoc = _a.setDoc, addDoc = _a.addDoc, deleteDoc = _a.deleteDoc, onSnapshot = _a.onSnapshot, query = _a.query, orderBy = _a.orderBy, limit = _a.limit, serverTimestamp = _a.serverTimestamp, getDocs = _a.getDocs;
+var $ = function (id) { return document.getElementById(id); };
+var nx = function () { return window.__nx; };
+var DAY = 86400000, REACTS = ['❤️', '😂', '😮', '👍'], COLORS = ['#0e7490', '#7e22ce', '#be185d', '#15803d', '#c2410c', '#1d4ed8'];
+var MAX_VIDEO_BYTES = 10 * 1024 * 1024;
+var sts = [], unsub = null, subFor = null, vList = [], vIdx = 0, tbg = 0;
+function compress(file, max, q) { return new Promise(function (res, rej) { var fr = new FileReader(); fr.onerror = rej; fr.onload = function () { var im = new Image(); im.onerror = rej; im.onload = function () { var s = Math.min(1, max / Math.max(im.width, im.height)), w = Math.round(im.width * s), h = Math.round(im.height * s), c = document.createElement('canvas'); c.width = w; c.height = h; c.getContext('2d').drawImage(im, 0, 0, w, h); var out = c.toDataURL('image/jpeg', q); while (out.length > 700000 && q > .3) {
+q -= .15;
+out = c.toDataURL('image/jpeg', q);
+} res(out); }; im.src = fr.result; }; fr.readAsDataURL(file); }); }
+/* Video: no re-encode -> original quality, instant upload */
+function compressVideo(file) {
+if (file.size > MAX_VIDEO_BYTES) {
+alert('Video is too large! Please select a video under 10MB.');
+return Promise.reject(new Error('Too large'));
+}
+var read = new Promise(function (res, rej) { var fr = new FileReader(); fr.onload = function () { return res(fr.result); }; fr.onerror = function () { return rej(new Error('Video read error')); }; fr.readAsDataURL(file); });
+var thumb = new Promise(function (res) {
+var url = URL.createObjectURL(file), v = document.createElement('video');
+var done = false;
+var fin = function (t) { if (done)
+return; done = true; URL.revokeObjectURL(url); res(t); };
+v.muted = true;
+v.playsInline = true;
+v.preload = 'auto';
+v.onloadeddata = function () { try {
+v.currentTime = 0.1;
+}
+catch (e) {
+fin('');
+} };
+v.onseeked = function () { try {
+var s = Math.min(1, 480 / Math.max(v.videoWidth, v.videoHeight)), c = document.createElement('canvas');
+c.width = Math.round(v.videoWidth * s);
+c.height = Math.round(v.videoHeight * s);
+c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+fin(c.toDataURL('image/jpeg', .7));
+}
+catch (e) {
+fin('');
+} };
+v.onerror = function () { return fin(''); };
+setTimeout(function () { return fin(''); }, 1500);
+v.src = url;
+});
+return Promise.all([read, thumb]).then(function (_a) {
+var vid = _a[0], t = _a[1];
+return ({ vid: vid, thumb: t });
+});
+}
+function pickImage(cb) { var i = $('nxFile'); i.value = ''; i.onchange = function () { var f = i.files && i.files[0]; if (f)
+cb(f); }; i.click(); }
+function pickVideo(cb) { var i = $('nxVidFile'); i.value = ''; i.onchange = function () { var f = i.files && i.files[0]; if (f)
+cb(f); }; i.click(); }
+function fmt(ms) { var d = new Date(ms), t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); return (d.toDateString() === new Date().toDateString() ? 'Today, ' : 'Yesterday, ') + t; }
+function photoOf(id) { if (id === nx().me())
+return window.__myPhoto || ''; var u = nx().users().find(function (x) { return x.id === id; }); return (u && u.photo) || ''; }
+function mkAv(id, sz) { var a = document.createElement('div'); a.className = 'avatar'; a.style.width = a.style.height = sz + 'px'; var p = photoOf(id); if (p) {
+a.style.backgroundImage = 'url("' + p + '")';
+a.style.backgroundSize = 'cover';
+a.style.backgroundPosition = 'center';
+}
+else
+a.textContent = id.charAt(0).toUpperCase(); return a; }
+function el(tag, css, txt) { var e = document.createElement(tag); if (css)
+e.style.cssText = css; if (txt !== undefined)
+e.textContent = txt; return e; }
+function fillStatusVideo(vd, s, autoplay) {
+vd.playsInline = true;
+if (s.vidChunks) {
+if (s.thumb)
+vd.poster = s.thumb;
+nx().chunkLoad(['statuses', s.id], s.vidChunks).then(function (u) { vd.src = u; if (autoplay && vd.play) {
+var p = vd.play();
+if (p && p.catch)
+p.catch(function () { });
+} }).catch(function (e) { return console.warn('status video', e); });
+}
+else
+vd.src = s.vid;
+}
+window.nxViewMedia = function (type, src) {
+var box = $('nxImg');
+box.replaceChildren();
+if (type === 'video') {
+var vd = el('video', 'max-width:100%;max-height:100%');
+vd.src = src;
+vd.controls = true;
+vd.autoplay = true;
+box.appendChild(vd);
+}
+else {
+var im = el('img', 'max-width:100%;max-height:100%');
+im.src = src;
+box.appendChild(im);
+}
+box.style.display = 'flex';
+};
+$('nxImg').addEventListener('click', function (e) { if (e.target === $('nxImg')) {
+$('nxImg').style.display = 'none';
+$('nxImg').replaceChildren();
+} });
+function sub() {
+var m = nx().me();
+if (!m)
+return;
+if (unsub && subFor === m)
+return;
+if (unsub)
+unsub();
+subFor = m;
+unsub = onSnapshot(query(collection(nx().db, 'statuses'), orderBy('createdAt', 'desc'), limit(150)), function (snap) {
+sts = [];
+snap.forEach(function (d) {
+var x = d.data({ serverTimestamps: 'estimate' }) || {}, ms = x.createdAt && x.createdAt.toMillis ? x.createdAt.toMillis() : Date.now();
+if (Date.now() - ms < DAY)
+sts.push(Object.assign({}, x, { id: d.id, ms: ms }));
+else
+nx().delWithChunks(d.ref, x.vidChunks).catch(function () { });
+});
+renderSt();
+if ($('myStView').style.display === 'flex')
+renderMy();
+}, function (e) { return console.warn('status listener', e); });
+}
+function byOwner() { var g = {}; sts.forEach(function (s) { (g[s.owner] = g[s.owner] || []).push(s); }); Object.keys(g).forEach(function (k) { return g[k].sort(function (a, b) { return a.ms - b.ms; }); }); return g; }
+function renderSt() {
+var L = $('stList'), m = nx().me();
+if (!L || !m)
+return;
+L.replaceChildren();
+var g = byOwner(), mine = g[m] || [];
+var my = el('div');
+my.className = 'row';
+my.tabIndex = 0;
+var inf = el('div', 'flex:1;min-width:0');
+inf.append(el('div', 'font-weight:800;color:var(--text)', 'My Status'), el('div', 'font-size:11px;color:var(--muted)', mine.length ? mine.length + ' update • ' + fmt(mine[mine.length - 1].ms) : 'Tap to view/add status'));
+my.append(mkAv(m, 46), inf);
+my.addEventListener('click', function () {
+if (mine.length > 0) {
+openViewer(m);
+}
+else {
+openMy();
+}
+});
+L.appendChild(my);
+L.appendChild(el('div', 'font-size:11px;color:var(--muted);padding:6px 4px 0', 'Friends status'));
+var owners = Object.keys(g).filter(function (o) { return o !== m && nx().contacts().has(o) && !nx().blocked(o); }).sort(function (a, b) { return g[b][g[b].length - 1].ms - g[a][g[a].length - 1].ms; });
+if (!owners.length)
+L.appendChild(el('div', 'color:var(--muted);text-align:center;padding:20px', 'No status updates'));
+owners.forEach(function (o) {
+var arr = g[o], last = arr[arr.length - 1], unseen = arr.some(function (s) { return !(s.views && s.views[m]); });
+var r = el('div');
+r.className = 'row';
+r.tabIndex = 0;
+var av = mkAv(o, 46);
+av.style.border = '3px solid ' + (unseen ? '#22c55e' : '#334155');
+var i2 = el('div', 'flex:1;min-width:0');
+i2.append(el('div', 'font-weight:700;color:var(--text)', o), el('div', 'font-size:11px;color:var(--muted)', fmt(last.ms)));
+r.append(av, i2);
+r.addEventListener('click', function () { return openViewer(o); });
+L.appendChild(r);
+});
+setTimeout(function () { return window.updateFocus && window.updateFocus(); }, 50);
+}
+function openStatusPage() { sub(); window.showApp('status'); renderSt(); }
+$('stBtn') || (function () { var b = document.createElement('button'); b.id = 'stBtn'; b.type = 'button'; b.textContent = 'Status'; b.addEventListener('click', openStatusPage); document.querySelector('#inboxApp .top-i').appendChild(b); })();
+REACTS.forEach(function (r) {
+var b = document.createElement('button');
+b.className = 'nx-r';
+b.dataset.r = r;
+b.textContent = r;
+b.onclick = function (ev) {
+var _a;
+ev.stopPropagation();
+var s = vList[vIdx], m = nx().me();
+if (!s)
+return;
+var old = (s.views && s.views[m]) || {}, v = { t: old.t || Date.now(), r: old.r === r ? '' : r };
+s.views = s.views || {};
+s.views[m] = v;
+setDoc(doc(nx().db, 'statuses', s.id), { views: (_a = {}, _a[m] = v, _a) }, { merge: true }).catch(function () { return alert('Reaction failed'); });
+showSt();
+};
+$('svReact').appendChild(b);
+});
+function openViewer(o) { var g = byOwner()[o]; if (!g || !g.length)
+return; vList = g; var m = nx().me(); vIdx = o === m ? 0 : Math.max(0, g.findIndex(function (s) { return !(s.views && s.views[m]); })); $('stViewer').style.display = 'flex'; showSt(); }
+function closeViewer() { $('stViewer').style.display = 'none'; vList = []; renderSt(); }
+function showSt() {
+var _a;
+var s = vList[vIdx], m = nx().me();
+if (!s) {
+closeViewer();
+return;
+}
+var hd = $('svHead');
+hd.replaceChildren();
+var b = el('button', '', '‹');
+b.className = 'nx-back';
+b.onclick = closeViewer;
+var inf = el('div', 'flex:1;min-width:0');
+inf.append(el('div', 'font-weight:800', s.owner === m ? 'My Status' : s.owner), el('div', 'font-size:11px;opacity:.8', fmt(s.ms) + '  (' + (vIdx + 1) + '/' + vList.length + ')'));
+hd.append(b, mkAv(s.owner, 38), inf);
+var c = $('svBody');
+c.replaceChildren();
+if (s.type === 'image') {
+c.style.background = '#000';
+var im = el('img', 'max-width:100%;max-height:100%;object-fit:contain');
+im.src = s.img;
+c.appendChild(im);
+}
+else if (s.type === 'video') {
+c.style.background = '#000';
+var vb = window.nxMakeVideo({ thumb: s.thumb || '', full: true, autoplay: true, onEnded: function () { vIdx++; showSt(); }, getUrl: s.vidChunks ? (function () { return nx().chunkLoad(['statuses', s.id], s.vidChunks); }) : null, src: s.vid });
+c.appendChild(vb);
+}
+else {
+c.style.background = s.bg || '#0e7490';
+c.appendChild(el('div', 'font-size:26px;font-weight:700;text-align:center;padding:24px;overflow-wrap:anywhere;color:#fff', s.text || ''));
+}
+var cur = (s.views && s.views[m] && s.views[m].r) || '';
+__spreadArray([], $('svReact').children, true).forEach(function (x) { return x.classList.toggle('sel', x.dataset.r === cur); });
+$('svReact').style.display = s.owner === m ? 'none' : 'flex';
+own.style.display = s.owner === m ? 'flex' : 'none';
+vw.style.display = 'none';
+if (s.owner !== m && !(s.views && s.views[m])) {
+s.views = s.views || {};
+var v = { t: Date.now(), r: '' };
+s.views[m] = v;
+setDoc(doc(nx().db, 'statuses', s.id), { views: (_a = {}, _a[m] = v, _a) }, { merge: true }).catch(function () { });
+}
+}
+/* My Status full screen: 3 buttons in the middle */
+var own = el('div', 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);display:none;gap:14px;z-index:5');
+own.className = 'g14';
+var vw = el('div', 'position:absolute;left:0;right:0;bottom:0;max-height:60%;overflow-y:auto;background:rgba(0,0,0,.92);padding:10px;display:none;flex-direction:column;gap:6px;z-index:6');
+vw.className = 'g6c';
+[['🗑️', 'Delete', '#ef4444', function () { return __awaiter(_this, void 0, void 0, function () { var s, e_1; return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+s = vList[vIdx];
+if (!s || !confirm('Delete this status?'))
+return [2 /*return*/];
+_a.label = 1;
+case 1:
+_a.trys.push([1, 3, , 4]);
+return [4 /*yield*/, nx().delWithChunks(doc(nx().db, 'statuses', s.id), s.vidChunks)];
+case 2:
+_a.sent();
+vList.splice(vIdx, 1);
+showSt();
+return [3 /*break*/, 4];
+case 3:
+e_1 = _a.sent();
+alert('Delete failed');
+return [3 /*break*/, 4];
+case 4: return [2 /*return*/];
+}
+}); }); }],
+['👁', 'Views', '#374151', function () { var s = vList[vIdx]; vw.replaceChildren(); var x = el('button', 'align-self:flex-end;background:transparent;border:0;color:#fff;font-size:18px', '✕ Close'); x.onclick = function () { return vw.style.display = 'none'; }; vw.appendChild(x); var vk = Object.keys((s && s.views) || {}); if (!vk.length)
+vw.appendChild(el('div', 'color:#aaa;padding:10px', 'No views yet')); vk.forEach(function (k) { var r = el('div'); r.className = 'nx-vrow'; var i2 = el('div', 'flex:1'); i2.append(el('div', 'font-weight:700', k), el('div', 'font-size:10px;opacity:.7', fmt(s.views[k].t))); r.append(mkAv(k, 38), i2, el('div', 'font-size:24px', s.views[k].r || '')); vw.appendChild(r); }); vw.style.display = 'flex'; }],
+['➕', 'New', '#00a884', function () { closeViewer(); $('newStChoice').style.display = 'flex'; }]
+].forEach(function (_a) {
+var ic = _a[0], lb = _a[1], bg = _a[2], fn = _a[3];
+var b = el('button', 'width:78px;padding:10px 4px;border:0;border-radius:14px;color:#fff;font-weight:800;font-size:12px;background:' + bg + ';opacity:.92', ic + '\n' + lb);
+b.style.whiteSpace = 'pre';
+b.onclick = function (e) { e.stopPropagation(); fn(); };
+own.appendChild(b);
+});
+$('stViewer').append(own, vw);
+$('svBody').addEventListener('click', function () { vIdx++; showSt(); });
+function openMy() { $('myStView').style.display = 'flex'; $('myViews').style.display = 'none'; renderMy(); }
+function renderMy() {
+var m = nx().me(), mine = (byOwner()[m] || []).slice().reverse(), vs = new Set();
+mine.forEach(function (s) { return Object.keys(s.views || {}).forEach(function (k) { return vs.add(k); }); });
+$('myViewsBtn').textContent = '👁 Views (' + vs.size + ')';
+var newStBtn = $('newStBtn');
+var delStBtn = $('delStBtn');
+var myViewsBtn = $('myViewsBtn');
+var myViews = $('myViews');
+var body = $('myStBody');
+body.replaceChildren(myViews, myViewsBtn, newStBtn, delStBtn);
+if (!mine.length) {
+var emptyNotice = el('div', 'color:var(--muted);text-align:center;padding:10px', 'No active status.');
+body.insertBefore(emptyNotice, myViewsBtn);
+return;
+}
+mine.forEach(function (s) {
+var sec = el('div');
+sec.className = 'nx-sec';
+var h = el('div', 'display:flex;align-items:center;gap:8px;margin-bottom:6px');
+h.className = 'g8';
+var del = el('button', 'background:transparent;border:0;font-size:18px;cursor:pointer', '🗑️');
+del.onclick = function () { if (confirm('Delete this status?'))
+nx().delWithChunks(doc(nx().db, 'statuses', s.id), s.vidChunks).catch(function () { return alert('Delete failed'); }); };
+var titleTxt = '✍️ ' + String(s.text || '').slice(0, 25);
+if (s.type === 'image')
+titleTxt = '🖼️ Photo Status';
+if (s.type === 'video')
+titleTxt = '📹 Video Status';
+h.append(el('div', 'flex:1;font-weight:700;font-size:13px;color:var(--text)', titleTxt + ' • ' + fmt(s.ms)), del);
+sec.appendChild(h);
+if (s.type === 'image') {
+var im = el('img', 'max-width:100%;max-height:150px;border-radius:6px;display:block;margin-top:6px;object-fit:cover');
+im.src = s.img;
+sec.appendChild(im);
+}
+else if (s.type === 'video') {
+var vb = window.nxMakeVideo({ thumb: s.thumb || '', lazy: true, maxH: '150px', getUrl: s.vidChunks ? (function () { return nx().chunkLoad(['statuses', s.id], s.vidChunks); }) : null, src: s.vid });
+vb.style.marginTop = '6px';
+sec.appendChild(vb);
+}
+var vk = Object.keys(s.views || {}).sort(function (a, b) { return s.views[b].t - s.views[a].t; });
+if (!vk.length)
+sec.appendChild(el('div', 'font-size:12px;color:var(--muted);margin-top:6px', 'No views yet'));
+vk.forEach(function (k) { var r = el('div'); r.className = 'nx-vrow'; var i2 = el('div', 'flex:1;min-width:0'); i2.append(el('div', 'font-weight:700;font-size:13px;color:var(--text)', k), el('div', 'font-size:10px;color:var(--muted)', fmt(s.views[k].t))); r.append(mkAv(k, 38), i2, el('div', 'font-size:24px', s.views[k].r || '')); sec.appendChild(r); });
+body.insertBefore(sec, myViews);
+});
+}
+$('myViewsBtn').addEventListener('click', function () { var b = $('myViews'); b.style.display = b.style.display === 'flex' ? 'none' : 'flex'; });
+$('newStBtn').addEventListener('click', function () { $('newStChoice').
