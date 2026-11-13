@@ -262,7 +262,7 @@ button:disabled{opacity:.6}
 <div class="hacker-sub">Owner <b>♡Malik Talha♡</b></div>
 <div class="hacker-sub" style="margin-top:-8px">Best Friends <b>♡Malik Amad♡</b> &amp; <b>♡Malik Yousaf♡</b></div>
 <div class="input"><input id="username" class="hacker-input" style="padding-left:36px" placeholder="Enter your username" autocomplete="username" maxlength="50"></div>
-<div class="input"><input id="password" type="password" class="hacker-input" style="padding-left:36px;padding-right:36px" placeholder="Enter your password" autocomplete="current-password"><span class="eye" onclick="showPass()"></span></div>
+<div class="input"><input id="password" type="password" class="hacker-input" style="padding-left:36px;padding-right:36px" placeholder="Enter your password" autocomplete="current-password"><span class="eye" onclick="showPass()" style="font-size:11px;top:12px;color:#d4af37">Show</span></div>
 <button id="loginBtn" class="hacker-btn">Login</button>
 <button id="signupBtn" class="hacker-btn2">Create</button>
 <div class="hacker-link">Secure • Private • Trusted</div>
@@ -633,7 +633,7 @@ return;
 }
 var db;try{firebase.initializeApp({apiKey:"AIzaSyDwDjLlhRxNNfIFN1B9j4PUTqT0fq34y50",authDomain:"nexachat-28ecc.firebaseapp.com",projectId:"nexachat-28ecc",storageBucket:"nexachat-28ecc.firebasestorage.app",messagingSenderId:"367209102337",appId:"1:367209102337:web:6f3a0e63b554f6dd145400",measurementId:"G-JLQW9XPDL6"});
 db=firebase.firestore();}catch(err){window.__fsFail=true;setTimeout(function(){alert("Firebase start nahi hua: "+(err&&err.message||err))},300);return}
-var oldBrowser=(typeof ReadableStream==='undefined'||typeof Symbol==='undefined'||/KaiOS|JioPhone|Jazz|Gecko\/(2|3|4|5|6)\d\b/i.test(navigator.userAgent||''));
+var oldBrowser=(typeof ReadableStream==='undefined'||typeof Symbol==='undefined'||/KaiOS|JioPhone|Jazz|UCBrowser|Opera Mini|Opera Mobi|Android [2-4]\.|Gecko\/(2|3|4|5|6)\d\b/i.test(navigator.userAgent||''));
 try{if(oldBrowser)db.settings({experimentalForceLongPolling:true,merge:true})}catch(e){}
 if(!oldBrowser){try{db.enablePersistence({synchronizeTabs:true}).catch(function(){})}catch(e){}}
 var auth=firebase.auth();
@@ -722,7 +722,7 @@ var FS = window.__fs;
 var collection = FS.collection, doc = FS.doc, setDoc = FS.setDoc, addDoc = FS.addDoc, deleteDoc = FS.deleteDoc, updateDoc = FS.updateDoc, onSnapshot = FS.onSnapshot, query = FS.query, orderBy = FS.orderBy, limit = FS.limit, startAfter = FS.startAfter, serverTimestamp = FS.serverTimestamp, arrayUnion = FS.arrayUnion, arrayRemove = FS.arrayRemove, getDocs = FS.getDocs, createUserWithEmailAndPassword = FS.createUserWithEmailAndPassword, signInWithEmailAndPassword = FS.signInWithEmailAndPassword, onAuthStateChanged = FS.onAuthStateChanged, signOut = FS.signOut;
 var db = FS.db, auth = FS.auth;
 var $ = function (id) { return document.getElementById(id); };
-var ONLINE_WINDOW = 75000, HEARTBEAT_MS = 25000, TYPING_REFRESH_MS = 2000, TYPING_STOP_MS = 1500, TYPING_SHOW_MS = 5000, FRESH_MS = 60000, INBOX_WATCH_LIMIT = 30;
+var ONLINE_WINDOW = 100000, HEARTBEAT_MS = 25000, TYPING_REFRESH_MS = 2000, TYPING_STOP_MS = 1500, TYPING_SHOW_MS = 5000, FRESH_MS = 60000, INBOX_WATCH_LIMIT = 30;
 var KEEP_MSGS = 20, KEEP_PRIV = 25, TWO_DAYS = 2 * 24 * 60 * 60 * 1000, CHUNK_SIZE = 700000;
 var currentUser = null, demoUsers = [], allUsers = [], remoteContacts = [], blockMap = readJSON('nexa_blockMap', {}), removedMap = readJSON('nexa_removed', {}), removedAtMap = readJSON('nexa_removed_at', {}), contactsMap = readJSON('nexa_contacts', {});
 var selected = null, selectedInbox = null, selectedMsgIndex = null, mentionIndex = 0, replyTo = null, focusIndex = 0;
@@ -1414,7 +1414,7 @@ _a.trys.push([1, 4, 5, 6]);
 stopGlobalListeners();
 stopPrivateListeners();
 stopInboxListeners();
-return [4 /*yield*/, setOffline(old)];
+return [4 /*yield*/, Promise.race([setOffline(old), new Promise(function (r) { setTimeout(r, 2500); })])];
 case 2:
 _a.sent();
 if (usersUnsub)
@@ -1734,23 +1734,33 @@ catch (e) { }
 window.insertMention = insertMention;
 function isTypingValue(v) { return v === true || (typeof v === 'number' && v > 0); }
 function initGlobalTyping() {
+clearTimer(globalTypingHide);
 if (globalTypingUnsub)
 globalTypingUnsub();
-globalTypingUnsub = onSnapshot(doc(db, 'typing', 'global'), function (snap) {
-var el = $('globalTyping');
+var gBase = null, gShow = {};
+function gRender() {
+var el = $('globalTyping'), now = Date.now(), names = [], k;
 clearTimer(globalTypingHide);
-if (!snap.exists || snap.metadata.fromCache) {
-el.style.display = 'none';
-return;
-}
-var data = snap.data() || {}, typers = Object.keys(data).filter(function (k) { return k.toLowerCase() !== String(currentUser || '').toLowerCase() && isValidUsername(k) && isTypingValue(data[k]); });
-if (typers.length) {
-el.textContent = typers.join(', ') + (typers.length > 1 ? ' are typing...' : ' is typing...');
+for (k in gShow) { if (gShow[k] > now) names.push(k); else delete gShow[k]; }
+if (names.length) {
+el.textContent = names.join(', ') + (names.length > 1 ? ' are typing...' : ' is typing...');
 el.style.display = 'block';
-globalTypingHide = setTimeout(function () { el.style.display = 'none'; }, TYPING_SHOW_MS);
+globalTypingHide = setTimeout(gRender, 800);
 }
 else
 el.style.display = 'none';
+}
+globalTypingUnsub = onSnapshot(doc(db, 'typing', 'global'), function (snap) {
+var data = snap.exists ? (snap.data() || {}) : {}, k, meLow = String(currentUser || '').toLowerCase();
+/* pehla/cached snapshot sirf baseline: purani value par "typing" nahi dikhana */
+if (snap.metadata.fromCache || gBase === null) { gBase = {}; for (k in data) gBase[k] = data[k]; return; }
+for (k in data) {
+if (data[k] === gBase[k]) continue;
+gBase[k] = data[k];
+if (k.toLowerCase() === meLow || !isValidUsername(k)) continue;
+if (isTypingValue(data[k])) gShow[k] = Date.now() + TYPING_SHOW_MS; else delete gShow[k];
+}
+gRender();
 }, function (e) { return console.error(e); });
 }
 $('globalInput').addEventListener('input', function () {
@@ -2109,16 +2119,22 @@ privateTypingUnsub();
 if (!selected || !currentUser)
 return;
 var id = getChatId(currentUser, selected);
-privateTypingUnsub = onSnapshot(doc(db, 'typing', id), function (snap) { var el = $('typingInd'); clearTimer(privateTypingHide); if (!snap.exists || snap.metadata.fromCache) {
-el.style.display = 'none';
-return;
-} var data = snap.data() || {}; if (isTypingValue(data[selected])) {
+var typWho = selected, typBase = undefined;
+privateTypingUnsub = onSnapshot(doc(db, 'typing', id), function (snap) {
+var el = $('typingInd'), data = snap.exists ? (snap.data() || {}) : {}, nv = data[typWho] === undefined ? null : data[typWho];
+/* pehla/cached snapshot sirf baseline hai: purani (stale) value par "typing" nahi dikhana */
+if (snap.metadata.fromCache || typBase === undefined) { typBase = nv; return; }
+if (nv === typBase) return;
+typBase = nv;
+clearTimer(privateTypingHide);
+if (isTypingValue(nv)) {
 el.style.display = 'block';
-el.textContent = selected + ' is typing...';
+el.textContent = typWho + ' is typing...';
 privateTypingHide = setTimeout(function () { el.style.display = 'none'; }, TYPING_SHOW_MS);
 }
 else
-el.style.display = 'none'; }, function (e) { return console.error(e); });
+el.style.display = 'none';
+}, function (e) { return console.error(e); });
 }
 function toggleChatOptions() { if (!window._selectedDoc || !selectedMsgIndex) {
 alert('Please select a message first.');
@@ -3823,3 +3839,4 @@ if(m.length)alert('NexaChat check:\n'+m.join('\n'));
   
 
   
+
