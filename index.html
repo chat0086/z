@@ -1,1 +1,213 @@
-.
+
+<!DOCTYPE html>
+<html>
+<head>
+<link rel="manifest" href="manifest.webapp">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<script>
+/* ===== NexaChat EARLY compat (plain ES5): sab se pehle chalta hai, Firebase se bhi pehle ===== */
+(function(g){
+/* console guard: kuch purane browsers mein console hota hi nahi */
+if(!g.console)g.console={};
+(['log','warn','error','info','debug']).forEach(function(k){if(typeof g.console[k]!=='function')g.console[k]=function(){}});
+
+/* Function.bind (Android < 4.0) */
+if(!Function.prototype.bind)Function.prototype.bind=function(o){var f=this,a=Array.prototype.slice.call(arguments,1);return function(){return f.apply(o,a.concat(Array.prototype.slice.call(arguments)))}};
+
+/* ---- Promise (Android < 4.4.4, purane Opera/UC, etc.) ---- */
+var nativeP=g.Promise&&typeof g.Promise==='function'&&g.Promise.resolve&&g.Promise.reject&&g.Promise.all&&g.Promise.race&&g.Promise.prototype&&g.Promise.prototype.then;
+if(!nativeP){
+var Q=[],T=0;
+var later=function(f){Q.push(f);if(!T){T=1;setTimeout(function(){T=0;while(Q.length){var x=Q.shift();try{x()}catch(e){setTimeout(function(){throw e},0)}}},0)}};
+var P=function(fn){
+if(!(this instanceof P))throw new TypeError('Promise must be called with new');
+if(typeof fn!=='function')throw new TypeError('Promise resolver is not a function');
+var self=this;self._s=0;self._v=void 0;self._q=[];
+var done=false;
+try{fn(function(v){if(done)return;done=true;resolveP(self,v)},function(e){if(done)return;done=true;settle(self,2,e)})}catch(e){if(!done){done=true;settle(self,2,e)}}
+};
+var settle=function(p,s,v){if(p._s)return;p._s=s;p._v=v;var q=p._q;p._q=null;for(var i=0;i<q.length;i++)(function(h){later(function(){run(p,h)})})(q[i])};
+var resolveP=function(p,x){
+if(x===p){settle(p,2,new TypeError('Promise cycle'));return}
+if(x&&(typeof x==='object'||typeof x==='function')){
+var then;try{then=x.then}catch(e){settle(p,2,e);return}
+if(typeof then==='function'){
+var called=false;
+try{then.call(x,function(y){if(called)return;called=true;resolveP(p,y)},function(r){if(called)return;called=true;settle(p,2,r)})}catch(e){if(!called){called=true;settle(p,2,e)}}
+return}
+}
+settle(p,1,x)
+};
+var run=function(p,h){
+var cb=p._s===1?h.f:h.r;
+if(typeof cb!=='function'){if(p._s===1)h.res(p._v);else h.rej(p._v);return}
+try{h.res(cb(p._v))}catch(e){h.rej(e)}
+};
+P.prototype.then=function(f,r){var self=this;return new P(function(res,rej){var h={f:f,r:r,res:res,rej:rej};if(self._s===0)self._q.push(h);else later(function(){run(self,h)})})};
+P.prototype['catch']=function(r){return this.then(undefined,r)};
+P.prototype['finally']=function(f){return this.then(function(v){return P.resolve(f()).then(function(){return v})},function(e){return P.resolve(f()).then(function(){throw e})})};
+P.resolve=function(v){return (v&&v.constructor===P)?v:new P(function(res){res(v)})};
+P.reject=function(e){return new P(function(res,rej){rej(e)})};
+P.all=function(list){return new P(function(res,rej){
+var a=Array.prototype.slice.call(list||[]),n=a.length,out=new Array(n),c=0;
+if(!n){res(out);return}
+a.forEach(function(x,i){P.resolve(x).then(function(v){out[i]=v;if(++c===n)res(out)},rej)})
+})};
+P.race=function(list){return new P(function(res,rej){Array.prototype.slice.call(list||[]).forEach(function(x){P.resolve(x).then(res,rej)})})};
+g.Promise=P;
+}else if(!g.Promise.prototype['finally']){
+g.Promise.prototype['finally']=function(f){var C=g.Promise;return this.then(function(v){return C.resolve(f()).then(function(){return v})},function(e){return C.resolve(f()).then(function(){throw e})})};
+}
+
+/* ---- Set / Map (agar nahi hain ya adhoore hain) ---- */
+var eq=function(a,b){return a===b||(a!==a&&b!==b)};
+var setOk=false,mapOk=false;
+try{setOk=typeof g.Set==='function'&&new g.Set([1,2,2]).size===2&&typeof g.Set.prototype.forEach==='function'&&typeof g.Set.prototype['delete']==='function'}catch(e){}
+try{mapOk=typeof g.Map==='function'&&new g.Map([[1,2]]).get(1)===2&&typeof g.Map.prototype.forEach==='function'&&typeof g.Map.prototype['delete']==='function'}catch(e){}
+var idx=function(arr,k){for(var i=0;i<arr.length;i++)if(eq(arr[i],k))return i;return -1};
+var each=function(it,fn){if(!it)return;if(typeof it.forEach==='function'&&typeof it.length!=='number'){it.forEach(function(v){fn(v)});return}for(var i=0;i<(it.length>>>0);i++)fn(it[i])};
+if(!setOk){
+var S=function(it){this._k=[];this.size=0;this.__poly=true;var s=this;each(it,function(v){s.add(v)})};
+S.prototype.add=function(v){if(idx(this._k,v)<0){this._k.push(v);this.size=this._k.length}return this};
+S.prototype.has=function(v){return idx(this._k,v)>=0};
+S.prototype['delete']=function(v){var i=idx(this._k,v);if(i<0)return false;this._k.splice(i,1);this.size=this._k.length;return true};
+S.prototype.clear=function(){this._k=[];this.size=0};
+S.prototype.forEach=function(cb,t){var a=this._k.slice();for(var i=0;i<a.length;i++)cb.call(t,a[i],a[i],this)};
+g.Set=S;
+}
+if(!mapOk){
+var M=function(it){this._k=[];this._v=[];this.size=0;this.__poly=true;var m=this;each(it,function(e){if(e)m.set(e[0],e[1])})};
+M.prototype.set=function(k,v){var i=idx(this._k,k);if(i<0){this._k.push(k);this._v.push(v)}else this._v[i]=v;this.size=this._k.length;return this};
+M.prototype.get=function(k){var i=idx(this._k,k);return i<0?undefined:this._v[i]};
+M.prototype.has=function(k){return idx(this._k,k)>=0};
+M.prototype['delete']=function(k){var i=idx(this._k,k);if(i<0)return false;this._k.splice(i,1);this._v.splice(i,1);this.size=this._k.length;return true};
+M.prototype.clear=function(){this._k=[];this._v=[];this.size=0};
+M.prototype.forEach=function(cb,t){var k=this._k.slice(),v=this._v.slice();for(var i=0;i<k.length;i++)cb.call(t,v[i],k[i],this)};
+g.Map=M;
+}
+if(typeof g.WeakMap!=='function'){g.WeakMap=function(){this._m=new g.Map()};g.WeakMap.prototype.get=function(k){return this._m.get(k)};g.WeakMap.prototype.set=function(k,v){this._m.set(k,v);return this};g.WeakMap.prototype.has=function(k){return this._m.has(k)};g.WeakMap.prototype['delete']=function(k){return this._m['delete'](k)}}
+
+/* ---- Array / Object / String / Number helpers ---- */
+var nativeFrom=Array.from;
+if(!nativeFrom||!setOk||!mapOk){
+Array.from=function(a,fn,t){
+if(a==null)throw new TypeError('Array.from needs an object');
+if(nativeFrom&&!a.__poly&&(typeof Symbol==='function'&&Symbol.iterator&&a[Symbol.iterator]))return nativeFrom.apply(Array,arguments);
+var r=[],i;
+if(typeof a.forEach==='function'&&typeof a.length!=='number')a.forEach(function(v){r.push(v)});
+else{var n=a.length>>>0;for(i=0;i<n;i++)r.push(a[i])}
+if(fn)for(i=0;i<r.length;i++)r[i]=fn.call(t,r[i],i);
+return r};
+}
+if(!Array.prototype.find)Array.prototype.find=function(f,t){for(var i=0;i<this.length;i++)if(f.call(t,this[i],i,this))return this[i];return undefined};
+if(!Array.prototype.findIndex)Array.prototype.findIndex=function(f,t){for(var i=0;i<this.length;i++)if(f.call(t,this[i],i,this))return i;return -1};
+if(!Array.prototype.fill)Array.prototype.fill=function(v,s,e){var n=this.length>>>0;s=s>>0;e=e===undefined?n:e>>0;s=s<0?Math.max(n+s,0):Math.min(s,n);e=e<0?Math.max(n+e,0):Math.min(e,n);for(;s<e;s++)this[s]=v;return this};
+if(!Array.of)Array.of=function(){return Array.prototype.slice.call(arguments)};
+if(!Object.assign)Object.assign=function(t){if(t==null)throw new TypeError('Cannot convert undefined or null to object');var o=Object(t);for(var i=1;i<arguments.length;i++){var s=arguments[i];if(s!=null)for(var k in s)if(Object.prototype.hasOwnProperty.call(s,k))o[k]=s[k]}return o};
+if(!String.prototype.startsWith)String.prototype.startsWith=function(x,p){p=p||0;return String(this).substr(p,x.length)===x};
+if(!String.prototype.repeat)String.prototype.repeat=function(n){var s='',t=String(this);n=n|0;while(n-->0)s+=t;return s};
+if(!String.prototype.trim)String.prototype.trim=function(){return String(this).replace(/^\s+|\s+$/g,'')};
+if(!Number.isNaN)Number.isNaN=function(v){return typeof v==='number'&&v!==v};
+if(!Number.isFinite)Number.isFinite=function(v){return typeof v==='number'&&isFinite(v)};
+if(!Number.isInteger)Number.isInteger=function(v){return typeof v==='number'&&isFinite(v)&&Math.floor(v)===v};
+if(!Math.sign)Math.sign=function(x){x=+x;return x>0?1:x<0?-1:x};
+if(!Math.trunc)Math.trunc=function(x){return x<0?Math.ceil(x):Math.floor(x)};
+if(!Date.now)Date.now=function(){return new Date().getTime()};
+if(!g.requestAnimationFrame)g.requestAnimationFrame=g.webkitRequestAnimationFrame||g.mozRequestAnimationFrame||function(f){return setTimeout(function(){f(Date.now())},16)};
+if(!g.MutationObserver&&g.WebKitMutationObserver)g.MutationObserver=g.WebKitMutationObserver;
+
+/* document.visibilityState na ho to 'visible' maan lo (warna online/seen ka kaam ruk jata hai) */
+try{if(!document.visibilityState)document.visibilityState=document.webkitVisibilityState||document.mozVisibilityState||'visible'}catch(e){}
+
+/* Object URL helpers (Blob/URL na ho to crash nahi hoga) */
+g.nxObjUrl=function(o){try{var U=g.URL||g.webkitURL;if(U&&U.createObjectURL)return U.createObjectURL(o)}catch(e){}return null};
+g.nxRevoke=function(u){try{var U=g.URL||g.webkitURL;if(u&&U&&U.revokeObjectURL)U.revokeObjectURL(u)}catch(e){}};
+
+/* Emoji / unicode naam ka pehla akshar (surrogate pair toot'ta nahi) */
+g.nxFirst=function(s){s=String(s==null?'':s);var m=s.match(/^[\uD800-\uDBFF][\uDC00-\uDFFF]/);return m?m[0]:s.charAt(0).toUpperCase()};
+
+/* ---- CSS var() engine: jin browsers mein var(--x) nahi chalta wahan theme aur height JS se lagti hai ---- */
+var V=g.__nxVars={ok:false,inited:false,t:0,tpl:[],map:{'bg':'#1d1708','panel':'#35290e','top':'#493816','text':'#fff8e1','muted':'#e7d6a5','accent':'#fbbf24','border':'#5c4a1e','msgme':'#854d0e','msgother':'#40331a','input':'#251d0b','soft':'#090702','green':'#22c55e','chatbg':'#1d1708','chathead':'#493816','privme':'#854d0e','privother':'#40331a','privinput':'#59451d','app-h':'100vh'}};
+try{V.ok=!!(g.CSS&&g.CSS.supports&&g.CSS.supports('color','var(--a)'))}catch(e){}
+V.apply=function(){var re=/var\(\s*--([\w-]+)\s*(?:,\s*([^)]*))?\)/g;for(var i=0;i<V.tpl.length;i++){var o=V.tpl[i];try{o.el.textContent=o.t.replace(re,function(m,n,fb){return V.map[n]!=null?V.map[n]:(fb||'')})}catch(e){}}};
+V.set=function(k,v){V.map[k]=v;if(!V.ok&&V.inited){clearTimeout(V.t);V.t=setTimeout(V.apply,30)}};
+V.init=function(){if(V.ok||V.inited)return;V.inited=true;try{V.map['app-h']=g.innerHeight+'px'}catch(e){}var s=document.getElementsByTagName('style');for(var i=0;i<s.length;i++)V.tpl.push({el:s[i],t:s[i].textContent});V.apply()};
+})(window);
+
+</script>
+<title>NexaChat</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+:root{--bg:#1d1708;--panel:#35290e;--top:#493816;--text:#fff8e1;--muted:#e7d6a5;--accent:#fbbf24;--border:#5c4a1e;--msgme:#854d0e;--msgother:#40331a;--input:#251d0b;--soft:#090702;--green:#22c55e;--chatbg:#1d1708;--chathead:#493816;--privme:#854d0e;--privother:#40331a;--privinput:#59451d}
+body{background:#1d1708;background:var(--bg);height:100vh;height:100dvh;height:100vh;height:var(--app-h,100vh);overflow:hidden;touch-action:manipulation;color:#fff8e1;color:var(--text);font-family:Arial,sans-serif}
+button,input{font:inherit}
+button:focus,input:focus{outline:2px solid #fbbf24;outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.6}
+#auth-screen{position:fixed;top:0;right:0;bottom:0;left:0;background:linear-gradient(160deg,#0b1128,#060a1c);display:flex;align-items:center;justify-content:center;z-index:9999;overflow-y:auto}
+#auth-screen:before{content:"";position:absolute;top:0;right:0;bottom:0;left:0;background:radial-gradient(circle at 20% 20%,#1a2a55 0%,transparent 40%),radial-gradient(circle at 90% 80%,#1a2a55 0%,transparent 40%)}
+.hacker-card{position:relative;z-index:2;width:100%;max-width:100%;min-height:100vh;padding:18px 12px 10px;font-family:Arial,sans-serif}
+.hacker-logo{text-align:center;margin-bottom:18px}
+.logo-icon{width:48px;height:48px;margin:0 auto 6px;border:2px solid #d4af37;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;color:#d4af37;box-shadow:0 0 12px rgba(212,175,55,.4)}
+.logo-text{color:#e8d5a0;font-size:24px;letter-spacing:1px;font-weight:700}
+.logo-text span{color:#fff}
+.hacker-sub{text-align:center;color:#fff;font-size:13px;margin:10px 0 18px}
+.hacker-sub b{color:#e8d5a0}
+.hacker-input{width:100%;background:#111a38;border:1.5px solid #d4af37;color:#fff;border-radius:16px;padding:10px 12px;margin-bottom:12px;font-size:13px}
+.hacker-btn,.hacker-btn2{width:100%;font-weight:700;border-radius:12px;padding:11px;margin-top:4px;cursor:pointer;font-size:16px}
+.hacker-btn{background:linear-gradient(180deg,#f0d48a,#d4af37);color:#0b1128;border:0}
+.hacker-btn2{background:transparent;color:#e8d5a0;border:1.5px solid #d4af37;margin-top:12px}
+.hacker-link{color:#888;font-size:10px;text-align:center;margin-top:18px;letter-spacing:1px}
+.input{position:relative}
+.eye{position:absolute;right:12px;top:10px;cursor:pointer;font-size:14px;color:#ccc}
+.app{display:none;height:100vh;height:100dvh;height:100vh;height:var(--app-h,100vh);flex-direction:column;min-height:0}
+.app.show{display:flex}
+#homeApp{background:#1d1708;background:var(--bg);padding:14px 12px;overflow-y:auto}
+.neon-top{background:#493816;background:var(--top);border:1.5px solid #fbbf24;border:1.5px solid var(--accent);border-radius:18px;padding:14px 16px;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.neon-card{margin-top:18px;background:#35290e;background:var(--panel);border:1.5px solid #fbbf24;border:1.5px solid var(--accent);border-radius:16px;padding:16px 14px;display:flex;align-items:center;gap:14px;cursor:pointer;flex-shrink:0}
+.neon-card:focus,.neon-card.active{outline:2px solid #c084fc}
+.nx-ad:focus,.nx-ad.active{outline:2px solid #c084fc}
+.neon-icon{width:52px;height:52px;flex-shrink:0;border-radius:50%;border:2px solid #e879f9;display:flex;align-items:center;justify-content:center;font-size:24px}
+.neon-card h3{color:#fff8e1;color:var(--text);font-size:15px;font-weight:800}
+.neon-card p{color:#e7d6a5;color:var(--muted);font-size:12px}
+.home-badge{display:none;margin-left:auto;background:#22c55e;background:var(--green);color:#000;font-weight:900;font-size:12px;min-width:24px;height:24px;padding:0 7px;border-radius:12px;align-items:center;justify-content:center}
+#globalApp,#onlineApp,#inboxApp{background:#251d0b;background:var(--input);color:#fff8e1;color:var(--text)}
+#globalApp,#inboxApp{position:relative}
+.top-g{height:48px;flex-shrink:0;background:#493816;background:var(--top);border-bottom:2px solid #fbbf24;border-bottom:2px solid var(--accent);display:flex;align-items:center;justify-content:space-between;padding:0 10px;gap:8px}
+.online-badge{background:#0a2e1f;border:1px solid #22c55e;border:1px solid var(--green);color:#4ade80;font-size:10px;padding:3px 7px;border-radius:12px;white-space:nowrap}
+.chat-area{flex:1;min-height:0;overflow-y:auto;padding:10px;display:flex;flex-direction:column;gap:10px;-webkit-overflow-scrolling:touch}
+.msg{max-width:85%;overflow-wrap:anywhere;word-wrap:break-word;border-radius:12px;padding:8px 10px;border:1.2px solid}
+.msg.other{align-self:flex-start;background:#40331a;background:var(--msgother);border-color:#a78bfa}
+.msg.me{align-self:flex-end;background:#854d0e;background:var(--msgme);border-color:#fbbf24;border-color:var(--accent)}
+.msg.highlight{border-color:#fde047!important;box-shadow:0 0 14px rgba(253,224,71,.7)!important}
+.msg.mention{color:#fde047;font-weight:900;background:rgba(253,224,71,.18);padding:0 4px;border-radius:4px}
+#mentionPopup{position:absolute;bottom:84px;left:8px;width:180px;background:#35290e;background:var(--panel);border:2px solid #fde047;border-radius:10px;padding:6px;display:none;z-index:50;max-height:140px;overflow-y:auto}
+.mention-item{padding:7px 8px;border-radius:6px;font-size:12px;color:#fff8e1;color:var(--text);cursor:pointer}
+.mention-item.active{background:#fde047;color:#000;font-weight:900}
+#globalTyping{display:none;padding:6px 12px;color:#fde047;font-size:11px;font-style:italic;background:#35290e;background:var(--panel);border-top:1px solid #5c4a1e;border-top:1px solid var(--border)}
+.top-i{height:52px;flex-shrink:0;background:#493816;background:var(--top);border-bottom:2px solid #fbbf24;border-bottom:2px solid var(--accent);display:flex;align-items:center;justify-content:center}
+.top-i h1{font-size:22px;color:#fbbf24;color:var(--accent)}
+.search-box{height:48px;flex-shrink:0;background:#493816;background:var(--top);padding:6px 10px;border-bottom:1px solid #5c4a1e;border-bottom:1px solid var(--border)}
+.search-box input{width:100%;height:100%;background:#251d0b;background:var(--input);border:1.2px solid #fbbf24;border:1.2px solid var(--accent);border-radius:10px;color:#fff8e1;color:var(--text);padding:0 10px 0 12px;font-size:13px}
+.list{flex:1;min-height:0;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:6px;-webkit-overflow-scrolling:touch}
+.row{min-height:60px;flex-shrink:0;background:#35290e;background:var(--panel);border:1px solid #5c4a1e;border:1px solid var(--border);border-radius:12px;display:flex;align-items:center;padding:8px 10px;gap:8px;cursor:pointer;overflow-wrap:anywhere;word-wrap:break-word}
+.row:hover,.row.active,.row:focus{border-color:#fbbf24!important;border-color:var(--accent)!important;background:#493816!important;background:var(--top)!important;outline:none}
+.row.unread{background:#0c2a24;border:1.5px solid #22c55e;box-shadow:0 0 10px rgba(34,197,94,.35)}
+.row.unread .avatar{border-color:#22c55e}
+.unread-badge{flex-shrink:0;background:#22c55e;color:#000;font-weight:900;font-size:12px;min-width:24px;height:24px;padding:0 7px;border-radius:12px;display:flex;align-items:center;justify-content:center}
+.avatar{width:42px;height:42px;flex-shrink:0;border-radius:50%;background:#493816;background:var(--top);border:1.5px solid #334155;display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff8e1;color:var(--text)}
+.status.online{background:#0a2e1f;color:#4ade80;border:1px solid #22c55e;padding:2px 6px;border-radius:10px;font-size:9px}
+.status.offline{background:#1a1a1a;color:#94a3b8;border:1px solid #555;padding:2px 6px;border-radius:10px}
+#inboxOptions,#chatOptions{position:absolute;bottom:38px;left:6px;width:210px;background:#35290e;background:var(--panel);border:2px solid #fbbf24;border:2px solid var(--accent);border-radius:12px;padding:6px;display:none;z-index:99;max-height:75%;overflow-y:auto}
+.opt-btn{width:100%;padding:10px;background:#493816;background:var(--top);border:1px solid #5c4a1e;border:1px solid var(--border);border-radius:8px;color:#fff8e1;color:var(--text);margin-bottom:6px;cursor:pointer;text-align:left;font-size:12px}
+.opt-btn:hover,.opt-btn:focus,.opt-btn.active{background:#251d0b;background:var(--input);border-color:#fbbf24;border-color:var(--accent);outline:none}
+#blockedView,#settingsView{position:absolute;top:0;right:0;bottom:0;left:0;background:#251d0b;background:var(--input);z-index:100;display:none;flex-direction:column;color:#fff8e1;color:var(--text)}
+.settings-content{flex:1;overflow-y:auto;padding:12px}
+.settings-card{background:#35290e;background:var(--panel);border:1px solid #fbbf24;border:1px solid var(--accent);border-radius:12px;padding:12px;margin-bottom:12px}
+.settings-title{font-size:14px;font-weight:bold;color:#fbbf24;color:var(--accent);margin-bottom:10px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #5c4a1e;border-bottom:1px solid var(--border);font-size:13px}
+.setting-row:last-child{border-bottom:0}
+.setting-toggle{width:54px;height:28px;border:1px solid #fbbf24;border:1px solid var(--accent);border-radius:20px;background:#333;color:#fff;font-weight:bold;cursor:pointer;flex-shrink:0}
+.setting-toggle.on{background:#15803d;border-color:#4ade80;color:#fff}
+.theme-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.theme-choice{min-height:4
