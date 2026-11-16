@@ -667,3 +667,1168 @@ arrayUnion:function(){return FV.arrayUnion.apply(FV,arguments)},
 arrayRemove:function(){return FV.arrayRemove.apply(FV,arguments)},
 createUserWithEmailAndPassword:function(a,e,p){return a.createUserWithEmailAndPassword(e,p)},
 signInWithEmailAndPassword:function(a,e,p){return a.signInWithEmailAndPassword(e,p)},
+onAuthStateChanged:function(a,cb){return a.onAuthStateChanged(cb)},
+signOut:function(a){return a.signOut()}
+};
+})();
+</script>
+<script>
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+return new (P || (P = Promise))(function (resolve, reject) {
+function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+step((generator = generator.apply(thisArg, _arguments || [])).next());
+});
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+function verb(n) { return function (v) { return step([n, v]); }; }
+function step(op) {
+if (f) throw new TypeError("Generator is already executing.");
+while (g && (g = 0, op[0] && (_ = 0)), _) try {
+if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+if (y = 0, t) op = [op[0] & 2, t.value];
+switch (op[0]) {
+case 0: case 1: t = op; break;
+case 4: _.label++; return { value: op[1], done: false };
+case 5: _.label++; y = op[1]; op = [0]; continue;
+case 7: op = _.ops.pop(); _.trys.pop(); continue;
+default:
+if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+if (t[2]) _.ops.pop();
+_.trys.pop(); continue;
+}
+op = body.call(thisArg, _);
+} catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+}
+};
+var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
+if (pack || arguments.length === 2) for (var i = 0, l = from.length, ar; i < l; i++) {
+if (ar || !(i in from)) {
+if (!ar) ar = Array.prototype.slice.call(from, 0, i);
+ar[i] = from[i];
+}
+}
+return to.concat(ar || Array.prototype.slice.call(from));
+};
+(function () {
+var _this = this;
+var FS = window.__fs;
+var collection = FS.collection, doc = FS.doc, setDoc = FS.setDoc, addDoc = FS.addDoc, deleteDoc = FS.deleteDoc, updateDoc = FS.updateDoc, onSnapshot = FS.onSnapshot, query = FS.query, orderBy = FS.orderBy, limit = FS.limit, startAfter = FS.startAfter, serverTimestamp = FS.serverTimestamp, arrayUnion = FS.arrayUnion, arrayRemove = FS.arrayRemove, getDocs = FS.getDocs, createUserWithEmailAndPassword = FS.createUserWithEmailAndPassword, signInWithEmailAndPassword = FS.signInWithEmailAndPassword, onAuthStateChanged = FS.onAuthStateChanged, signOut = FS.signOut;
+var db = FS.db, auth = FS.auth;
+var $ = function (id) { return document.getElementById(id); };
+var ONLINE_WINDOW = 100000, HEARTBEAT_MS = 25000, TYPING_REFRESH_MS = 2000, TYPING_STOP_MS = 1500, TYPING_SHOW_MS = 5000, FRESH_MS = 60000, INBOX_WATCH_LIMIT = 36;
+var KEEP_MSGS = 40, KEEP_PRIV = 35, TWO_DAYS = 2 * 24 * 60 * 60 * 1000, CHUNK_SIZE = 980000;
+var currentUser = null, demoUsers = [], allUsers = [], remoteContacts = [], blockMap = readJSON('nexa_blockMap', {}), removedMap = readJSON('nexa_removed', {}), removedAtMap = readJSON('nexa_removed_at', {}), contactsMap = readJSON('nexa_contacts', {});
+var selected = null, selectedInbox = null, selectedMsgIndex = null, mentionIndex = 0, replyTo = null, focusIndex = 0;
+var globalUnsub = null, privateUnsub = null, usersUnsub = null, globalTypingUnsub = null, privateTypingUnsub = null;
+var globalTypingTimer = null, privateTypingTimer = null, globalTypingHide = null, privateTypingHide = null, globalLastTypingWrite = 0, privateLastTypingWrite = 0, privateTypingChatId = null, mentionOpen = false, lastMentionQuery = '', messageCache = [], busy = false, authReady = false, authStateVersion = 0, usersErrorShown = false, lastOnlineSig = '', permErrorShown = false, serverSkew = 0, lastOwnSeen = 0;
+var inboxListeners = new Map(), notifiedMsgs = new Set(), chunkCache = new Map();
+var unreadMap = {}, lastMsgMap = {}, inboxRefreshTimer = null, audioCtx = null, masterBus = null;
+window.__nexaReady = true;
+setTimeout(function () { authReady = true; }, 6000);
+var myLoc = 'private';
+function spamBlocked(to) { if (!currentUser)
+return false; var t = allUsers.find(function (x) { return x.id === String(to).toLowerCase(); }); if (!t || !t.spam)
+return false; if ((t.contacts || []).indexOf(currentUser.toLowerCase()) >= 0)
+return false; alert('This user has Spam Protection ON. You cannot message them because you are not in their chat list.'); return true; }
+window.__nx = { dn: function (i) { return dn(i); }, spamBlocked: spamBlocked, db: db, me: function () { return currentUser; }, users: function () { return allUsers; }, contacts: function () { return getContacts(); }, chatId: getChatId, sel: function () { return selected; }, blocked: function (id) { return isBlockedByMe(id) || isBlockedByOther(id); }, addContact: addContact, cleanup: cleanupPrivateChat, chunkWrite: chunkWrite, chunkLoad: chunkLoad, prime: chunkPrime, delWithChunks: deleteWithChunks };
+function readJSON(key, fallback) { try {
+var v = JSON.parse(localStorage.getItem(key) || 'null');
+return v && typeof v === 'object' ? v : fallback;
+}
+catch (e) {
+return fallback;
+} }
+function cleanUsername(v) { return String(v || '').replace(/^\s+|\s+$/g, '').replace(/\s+/g, '_').toLowerCase(); }
+function cpLen(t) { return String(t).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '_').length; }
+var pendingName = null, pendingDisp = null;
+function nxHex(t) { var b = unescape(encodeURIComponent(t)), h = '', i, c; for (i = 0; i < b.length; i++) { c = b.charCodeAt(i).toString(16); h += c.length < 2 ? '0' + c : c; } return h; }
+function nxUnhex(h) { try { var b = '', i; for (i = 0; i + 1 < h.length; i += 2) b += String.fromCharCode(parseInt(h.substr(i, 2), 16)); return decodeURIComponent(escape(b)); } catch (e) { return ''; } }
+function nxHash(t) { var seeds = [2166136261, 16777619, 5381, 52711], out = '', k, i, h, c; for (k = 0; k < 4; k++) { h = seeds[k] >>> 0; for (i = 0; i < t.length; i++) { c = t.charCodeAt(i); h = k % 2 ? (((h << 5) + h) ^ c) >>> 0 : ((h ^ c) * 16777619) >>> 0; } h = h.toString(16); while (h.length < 8) h = '0' + h; out += h; } return out; }
+function isValidUsername(id) { return typeof id === 'string' && id.length > 0 && cpLen(id) <= 25 && !/[\/\u0000-\u001F\u007F\s]/.test(id) && id !== '.' && id !== '..' && !/^__.*__$/.test(id); }
+function nowMs() { return Date.now() - serverSkew; }
+function isOnline(u) { return !!u && u.online === true && u.lastSeenMs > 0 && (nowMs() - u.lastSeenMs) < ONLINE_WINDOW; }
+function inGlobal(u) { return !!u && u.loc === 'global' && isOnline(u); }
+function setLoc(l) { if (myLoc === l)
+return; myLoc = l; if (!currentUser)
+return; setDoc(doc(db, 'users', currentUser), { loc: l, lastSeen: serverTimestamp() }, { merge: true }).catch(function (e) { return console.warn(e); }); refreshOnline(); updateCounts(); }
+function refreshOnline() { demoUsers = allUsers.filter(isOnline); }
+function updateCounts() { var g = demoUsers.filter(function (u) { return u.loc === 'global'; }).length, p = demoUsers.length - g, me = currentUser ? 1 : 0; $('globalOnlineCount').textContent = '● Online: ' + (g + (myLoc === 'global' ? me : 0)); $('onlineCount').textContent = '● Online: ' + (p + (myLoc === 'global' ? 0 : me)); }
+function lastSeenText(u) {
+var ms = u && u.lastSeenMs;
+if (!ms)
+return 'Offline';
+var d = new Date(ms), n = new Date(), y = new Date(n.getFullYear(), n.getMonth(), n.getDate() - 1), t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+if (d.toDateString() === n.toDateString())
+return 'Last seen today, ' + t;
+if (d.toDateString() === y.toDateString())
+return 'Last seen yesterday, ' + t;
+return 'Last seen ' + d.toLocaleDateString([], { day: '2-digit', month: 'short' }) + ', ' + t;
+}
+function updateChatStatus() { if (!selected || !$('chatApp').classList.contains('show'))
+return; var u = allUsers.find(function (x) { return x.id.toLowerCase() === selected.toLowerCase(); }); $('chatStatus').textContent = isBlockedByMe(selected) ? currentUser + ' has blocked u' : isBlockedByOther(selected) ? 'Blocked You' : isOnline(u) ? 'Online' : lastSeenText(u); }
+function setBusy(v) { busy = v; $('loginBtn').disabled = v; $('signupBtn').disabled = v; }
+function clearTimer(t) { if (t)
+clearTimeout(t); }
+function usernameEmail(u) { u = cleanUsername(u); if (/^[a-z0-9_]{2,25}$/.test(u)) return u + '@nexachat.invalid'; var h = nxHex(u); return (h.length <= 60 ? 'x-' + h : 'h-' + nxHash(u)) + '@nexachat.invalid'; }
+function usernameFromUser(user) { var email = String(user && user.email || '').toLowerCase(), suf = '@nexachat.invalid'; if (email.slice(-suf.length) !== suf) return null; var local = email.slice(0, -suf.length), n; if (/^[a-z0-9_]{2,25}$/.test(local)) return local; if (local.indexOf('x-') === 0) { n = cleanUsername(nxUnhex(local.slice(2))); if (n && usernameEmail(n) === email) return n; } if (pendingName && usernameEmail(pendingName) === email) return cleanUsername(pendingName); var map = readJSON('nexa_unames', {}); if (map[email] && usernameEmail(map[email]) === email) return map[email]; if (user.displayName && usernameEmail(user.displayName) === email) return cleanUsername(user.displayName); return null; }
+function rememberName(name) { try { var map = readJSON('nexa_unames', {}); map[usernameEmail(name)] = name; localStorage.setItem('nexa_unames', JSON.stringify(map)); } catch (e) { } }
+function dataUrlToBlob(u) {
+var i = u.indexOf(','), meta = u.slice(5, i), t = meta.split(';')[0], type = /^video\//.test(t) ? t : 'video/mp4', bin = atob(u.slice(i + 1)), len = bin.length, arr = new Uint8Array(len);
+for (var k = 0; k < len; k++)
+arr[k] = bin.charCodeAt(k);
+return new Blob([arr], { type: type });
+}
+function chunkWrite(parentRef, dataUrl) {
+return __awaiter(this, void 0, void 0, function () {
+var n, jobs, i, e_1, i;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+n = Math.ceil(dataUrl.length / CHUNK_SIZE), jobs = [];
+try { if (window.nxUp) window.nxUp.start(n); } catch (e) { }
+for (i = 0; i < n; i++)
+jobs.push(setDoc(doc(parentRef, 'chunks', 'c' + i), { i: i, d: dataUrl.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE) }).then(function () { try { if (window.nxUp) window.nxUp.step(); } catch (e) { } }));
+_a.label = 1;
+case 1:
+_a.trys.push([1, 3, , 4]);
+return [4 /*yield*/, Promise.all(jobs)];
+case 2:
+_a.sent();
+return [3 /*break*/, 4];
+case 3:
+e_1 = _a.sent();
+try { if (window.nxUp) window.nxUp.end(); } catch (e) { }
+for (i = 0; i < n; i++)
+deleteDoc(doc(parentRef, 'chunks', 'c' + i)).catch(function () { });
+throw e_1;
+case 4: try { if (window.nxUp) window.nxUp.end(); } catch (e) { }
+return [2 /*return*/, n];
+}
+});
+});
+}
+function nxBlobUrl(u) { try { return window.nxObjUrl(dataUrlToBlob(u)) || u; } catch (e) { return u; } }
+function chunkPrime(p, u) { chunkCache.set(p.join('/'), Promise.resolve(nxBlobUrl(u))); }
+function chunkLoad(pathArr, n) {
+var _this = this;
+var key = pathArr.join('/');
+if (chunkCache.has(key))
+return chunkCache.get(key);
+var p = (function () { return __awaiter(_this, void 0, void 0, function () {
+var snap, a, s;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+snap = null;
+a = 0;
+_a.label = 1;
+case 1:
+if (!(a < 6)) return [3 /*break*/, 5];
+return [4 /*yield*/, (function(){var qq=query(collection.apply(void 0, __spreadArray(__spreadArray([db], pathArr, false), ['chunks'], false)), orderBy('i', 'asc'));return getDocs(qq).then(function(r){return (r.size>=n||r.metadata.fromCache)?r:r;},function(){return qq.get({source:'cache'});}).then(function(r){if(r.size>=n)return r;return qq.get({source:'cache'}).then(function(c){return c.size>r.size?c:r;},function(){return r;});});})()];
+case 2:
+snap = _a.sent();
+if (snap.size >= n)
+return [3 /*break*/, 5];
+return [4 /*yield*/, new Promise(function (r) { return setTimeout(r, 1500); })];
+case 3:
+_a.sent();
+_a.label = 4;
+case 4:
+a++;
+return [3 /*break*/, 1];
+case 5:
+if (!snap || snap.size < n)
+throw new Error('Video chunks missing');
+s = '';
+snap.forEach(function (d) { s += String(d.data().d || ''); });
+return [2 /*return*/, nxBlobUrl(s)];
+}
+});
+}); })();
+chunkCache.set(key, p);
+p.catch(function () { return chunkCache.delete(key); });
+return p;
+}
+function deleteWithChunks(ref, n) {
+return __awaiter(this, void 0, void 0, function () {
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+n = parseInt(n, 10) || 0;
+if (!(n > 0)) return [3 /*break*/, 2];
+return [4 /*yield*/, Promise.all(Array.from({ length: n }, function (_, i) { return deleteDoc(doc(ref, 'chunks', 'c' + i)).catch(function () { }); }))];
+case 1:
+_a.sent();
+_a.label = 2;
+case 2: return [4 /*yield*/, deleteDoc(ref)];
+case 3:
+_a.sent();
+return [2 /*return*/];
+}
+});
+});
+}
+var themes = [
+{ name: 'White Theme', bg: '#f0f2f5', panel: '#ffffff', top: '#ffffff', text: '#111b21', muted: '#667781', accent: '#00a884', me: '#d9fdd3', other: '#ffffff', input: '#f0f2f5', chat: '#efeae2', head: '#f0f2f5', privme: '#d9fdd3', privother: '#ffffff', privinput: '#f0f2f5', soft: '#e9edef' },
+{ name: 'Golden Luxury', bg: '#1d1708', panel: '#35290e', top: '#493816', text: '#fff8e1', muted: '#e7d6a5', accent: '#fbbf24', border: '#5c4a1e', me: '#854d0e', other: '#40331a', input: '#251d0b', chat: '#1d1708', head: '#493816', privme: '#854d0e', privother: '#40331a', privinput: '#59451d', soft: '#090702' },
+{ name: 'Midnight Neon', bg: '#020611', panel: '#0f1733', top: '#101a3a', text: '#ffffff', muted: '#a5b4d4', accent: '#22d3ee', me: '#0e7490', other: '#1a2040', input: '#070e28', chat: '#0b141a', head: '#202c33', privme: '#005c4b', privother: '#202c33', privinput: '#2a3942', soft: '#000' },
+{ name: 'Ocean Blue', bg: '#061a2d', panel: '#0b2944', top: '#103858', text: '#ffffff', muted: '#b9d9f2', accent: '#38bdf8', me: '#075985', other: '#123955', input: '#071e32', chat: '#071e32', head: '#103858', privme: '#075e54', privother: '#173c52', privinput: '#23485e', soft: '#020c16' },
+{ name: 'Purple Dream', bg: '#160b2b', panel: '#281545', top: '#36205a', text: '#ffffff', muted: '#decaf8', accent: '#c084fc', me: '#7e22ce', other: '#35204b', input: '#1c1032', chat: '#160b2b', head: '#36205a', privme: '#6b21a8', privother: '#35204b', privinput: '#42245d', soft: '#08040e' },
+{ name: 'Emerald Pro', bg: '#071b13', panel: '#103426', top: '#164832', text: '#ffffff', muted: '#b6e6c9', accent: '#34d399', me: '#047857', other: '#194633', input: '#09251a', chat: '#071b13', head: '#164832', privme: '#047857', privother: '#194633', privinput: '#24533e', soft: '#020b07' },
+{ name: 'Cyberpunk Red', bg: '#210909', panel: '#3b1111', top: '#511717', text: '#ffffff', muted: '#f5caca', accent: '#f87171', me: '#991b1b', other: '#4b2020', input: '#2b0b0b', chat: '#210909', head: '#511717', privme: '#991b1b', privother: '#4b2020', privinput: '#602a2a', soft: '#0b0202' },
+{ name: 'Carbon Dark', bg: '#101010', panel: '#202020', top: '#303030', text: '#ffffff', muted: '#c0c0c0', accent: '#e5e7eb', me: '#404040', other: '#252525', input: '#151515', chat: '#101010', head: '#303030', privme: '#374151', privother: '#252525', privinput: '#404040', soft: '#000000' }
+];
+function savedTheme() { try { var p = localStorage.getItem('nexa_theme_pick'); return p === null || p === '' ? 1 : parseInt(p, 10); } catch (e) { return 1; } }
+function applyTheme(index, byUser) {
+index = parseInt(index, 10);
+if (isNaN(index) || index < 0 || index >= themes.length)
+index = 0;
+var t = themes[index], root = document.documentElement;
+var vars = { border: t.border || '#1e2a50', bg: t.bg, panel: t.panel, top: t.top, text: t.text, muted: t.muted, accent: t.accent, msgme: t.me, msgother: t.other, input: t.input, chatbg: t.chat, chathead: t.head, privme: t.privme, privother: t.privother, privinput: t.privinput, soft: t.soft };
+Object.keys(vars).forEach(function (k) { try { root.style.setProperty('--' + k, vars[k]); } catch (e) { } if (window.__nxVars) window.__nxVars.set(k, vars[k]); });
+try {
+localStorage.setItem('nexa_theme', String(index));
+if (byUser) localStorage.setItem('nexa_theme_pick', String(index));
+}
+catch (e) { }
+renderThemeChoices();
+}
+function renderThemeChoices() {
+var grid = $('themeGrid');
+if (!grid)
+return;
+grid.replaceChildren();
+var chosen = savedTheme();
+themes.forEach(function (t, i) {
+var b = document.createElement('button');
+b.type = 'button';
+b.className = 'theme-choice' + (i === chosen ? ' selected' : '');
+b.textContent = (i + 1) + '. ' + t.name;
+b.style.background = t.panel;
+b.style.color = t.text;
+b.style.borderColor = i === chosen ? '#fde047' : t.accent;
+b.addEventListener('click', function () { return applyTheme(i, true); });
+grid.appendChild(b);
+});
+}
+var inboxSoundEnabled = true;
+try {
+inboxSoundEnabled = localStorage.getItem('nexa_inbox_sound') !== 'off';
+}
+catch (e) { }
+function updateSoundToggle() { var b = $('soundToggle'); if (!b)
+return; b.textContent = inboxSoundEnabled ? 'ON' : 'OFF'; b.className = 'setting-toggle' + (inboxSoundEnabled ? ' on' : ''); }
+window.toggleInboxSound = function () { inboxSoundEnabled = !inboxSoundEnabled; try {
+localStorage.setItem('nexa_inbox_sound', inboxSoundEnabled ? 'on' : 'off');
+}
+catch (e) { } updateSoundToggle(); };
+var spamProtectionEnabled = false;
+try {
+spamProtectionEnabled = localStorage.getItem('nexa_spam_prot') === 'on';
+}
+catch (e) { }
+function updateSpamToggle() { var b = $('spamToggle'); if (!b)
+return; b.textContent = spamProtectionEnabled ? 'ON' : 'OFF'; b.className = 'setting-toggle' + (spamProtectionEnabled ? ' on' : ''); }
+window.toggleSpamProtection = function () {
+if (!spamProtectionEnabled) {
+if (!confirm('Spam Protection ON: only users in your chat list can message you. New users will not be able to message you, but you can still message everyone. Continue?'))
+return;
+}
+spamProtectionEnabled = !spamProtectionEnabled;
+try {
+localStorage.setItem('nexa_spam_prot', spamProtectionEnabled ? 'on' : 'off');
+}
+catch (e) { }
+updateSpamToggle();
+if (currentUser)
+setDoc(doc(db, 'users', currentUser), { spam: spamProtectionEnabled }, { merge: true }).catch(function (e) { return console.warn(e); });
+};
+window.showSettings = function () {
+$('inboxOptions').style.display = 'none';
+$('settingsView').style.display = 'flex';
+renderThemeChoices();
+updateSoundToggle();
+updateSpamToggle();
+$('themeGrid').style.display = 'none';
+setTimeout(updateFocus, 50);
+};
+window.closeSettings = function () { $('settingsView').style.display = 'none'; updateFocus(); };
+applyTheme(savedTheme());
+updateSoundToggle();
+updateSpamToggle();
+document.addEventListener('click', function (e) {
+if (e.target && e.target.id === 'themeSectionTitle') {
+var tg = $('themeGrid');
+tg.style.display = tg.style.display === 'none' ? (window.__gridDisp || 'grid') : 'none';
+}
+});
+function unlockAudio() { try {
+if (!audioCtx) {
+var AC = window.AudioContext || window.webkitAudioContext;
+if (!AC)
+return;
+audioCtx = new AC();
+}
+if (audioCtx.state === 'suspended')
+audioCtx.resume();
+}
+catch (e) { } }
+['click', 'touchstart', 'keydown'].forEach(function (ev) { return document.addEventListener(ev, unlockAudio, { passive: true }); });
+function getBus() { if (!audioCtx)
+return null; if (!masterBus) {
+var g = audioCtx.createGain();
+g.gain.value = 1.5;
+g.connect(audioCtx.destination);
+masterBus = g;
+} return masterBus; }
+function beep(freq, when, dur, vol) { var bus = getBus(); if (!bus)
+return; try {
+var t = audioCtx.currentTime + when, o = audioCtx.createOscillator(), g = audioCtx.createGain();
+o.type = 'sine';
+o.frequency.value = freq;
+g.gain.setValueAtTime(.0001, t);
+g.gain.exponentialRampToValueAtTime(vol, t + .015);
+g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+o.connect(g);
+g.connect(bus);
+o.start(t);
+o.stop(t + dur + .03);
+}
+catch (e) { } }
+function playSound(kind) { if (!inboxSoundEnabled)
+return; try {
+unlockAudio();
+if (!audioCtx)
+return;
+var go = function () { if (kind === 'ring') {
+[[1047, 0], [1319, .18], [1568, .36], [2093, .54], [1568, 1], [1319, 1.18], [1568, 1.36], [2093, 1.54]].forEach(function (n) { return beep(n[0], n[1], .4, .65); });
+if (navigator.vibrate)
+navigator.vibrate([150, 80, 150]);
+}
+else {
+beep(1175, 0, .25, .35);
+beep(1568, .12, .3, .35);
+} };
+if (audioCtx.state === 'running')
+go();
+else
+audioCtx.resume().then(go).catch(function () { });
+}
+catch (e) { } }
+function notify(title, body) { try {
+if (document.visibilityState === 'hidden' && 'Notification' in window && Notification.permission === 'granted')
+new Notification(title, { body: body, tag: 'nexachat' });
+}
+catch (e) { } }
+function msgAge(m) { var c = m && m.createdAt; if (!c || typeof c.toMillis !== 'function')
+return Infinity; return Math.abs(nowMs() - c.toMillis()); }
+function shouldRing(m, baselined) { var age = msgAge(m); if (age === Infinity)
+return false; return age < FRESH_MS || (baselined && age < 300000); }
+function unremoveId(id) { if (!currentUser)
+return; var low = String(id).toLowerCase(), wasRemoved = isRemoved(low); if (Array.isArray(removedMap[currentUser])) {
+removedMap[currentUser] = removedMap[currentUser].filter(function (x) { return x !== low; });
+saveRemovedMap();
+} if (removedAtMap[currentUser]) {
+delete removedAtMap[currentUser][low];
+saveRemovedAtMap();
+} if (wasRemoved) { try { setDoc(doc(db, 'users', currentUser), { removed: arrayRemove(low), contacts: arrayUnion(low) }, { merge: true }).catch(function (e) { return console.warn(e); }); } catch (e) { } } }
+function isViewingChat(id) { return !!selected && selected.toLowerCase() === id.toLowerCase() && $('chatApp').classList.contains('show') && document.visibilityState === 'visible'; }
+function totalUnread() { return Object.values(unreadMap).reduce(function (a, b) { return a + b; }, 0); }
+function updateUnreadBadges() { var t = totalUnread(), b = $('homeInboxBadge'), a = $('homeInboxArrow'); if (b) {
+b.textContent = t > 99 ? '99+' : String(t);
+b.style.display = t > 0 ? 'flex' : 'none';
+} if (a)
+a.style.marginLeft = t > 0 ? '8px' : 'auto'; document.title = t > 0 ? '(' + t + ') NexaChat' : 'NexaChat'; }
+function scheduleInboxRefresh() { if (inboxRefreshTimer)
+return; inboxRefreshTimer = setTimeout(function () { inboxRefreshTimer = null; renderLists(); updateUnreadBadges(); }, 150); }
+function previewText(id) { var l = lastMsgMap[id]; if (!l || !l.text)
+return ''; var t = String(l.text).replace(/\s+/g, ' '); return (l.mine ? 'You: ' : '') + (t.length > 28 ? t.slice(0, 28) + '…' : t); }
+function attachInboxListener(id) {
+var chatId = getChatId(currentUser, id), q = query(collection(db, 'privateChats', chatId, 'messages'), orderBy('createdAt', 'desc'), limit(INBOX_WATCH_LIMIT)), rec = { unsub: null, baselined: false };
+rec.unsub = onSnapshot(q, function (snap) {
+if (!currentUser)
+return;
+var me = currentUser.toLowerCase(), viewing = isViewingChat(id), blocked = isBlockedByMe(id) || isBlockedByOther(id);
+var unread = 0, last = null, newestIncomingMs = 0;
+snap.docs.forEach(function (d, i) { var m = d.data({ serverTimestamps: 'estimate' }) || {}; if (i === 0)
+last = m; if (String(m.to || '').toLowerCase() === me) {
+if (m.createdAt && typeof m.createdAt.toMillis === 'function')
+newestIncomingMs = Math.max(newestIncomingMs, m.createdAt.toMillis());
+if (m.status !== 'seen')
+unread++;
+} });
+if (snap.size > KEEP_PRIV && !snap.metadata.fromCache)
+cleanupPrivateChat(chatId);
+if (isRemoved(id)) {
+if (!removedAtMap[currentUser])
+removedAtMap[currentUser] = {};
+var removedAt = removedAtMap[currentUser][id.toLowerCase()];
+if (!removedAt) {
+removedAtMap[currentUser][id.toLowerCase()] = nowMs();
+saveRemovedAtMap();
+}
+else if (newestIncomingMs > removedAt)
+unremoveId(id);
+}
+snap.docChanges().forEach(function (ch) {
+if (ch.type !== 'added')
+return;
+var m = ch.doc.data({ serverTimestamps: 'estimate' }) || {};
+var incoming = String(m.from || '').toLowerCase() === id.toLowerCase() && String(m.to || '').toLowerCase() === me;
+if (incoming && m.status === 'sent' && !snap.metadata.fromCache)
+updateDoc(ch.doc.ref, { status: 'delivered' }).catch(function () { });
+if (!incoming || m.status === 'seen' || !shouldRing(m, rec.baselined))
+return;
+var key = chatId + '/' + ch.doc.id;
+if (notifiedMsgs.has(key))
+return;
+notifiedMsgs.add(key);
+if (blocked)
+return;
+if (viewing)
+playSound('soft');
+else
+playSound('ring');
+notify('New message from ' + id, String(m.text || '').slice(0, 80));
+});
+if (!snap.metadata.fromCache)
+rec.baselined = true;
+unreadMap[id] = (viewing || blocked || isRemoved(id)) ? 0 : unread;
+if (last) {
+var ms = 0;
+if (last.createdAt && typeof last.createdAt.toMillis === 'function')
+ms = last.createdAt.toMillis();
+lastMsgMap[id] = { text: String(last.text || ''), mine: String(last.from || '').toLowerCase() === me, ms: ms };
+}
+scheduleInboxRefresh();
+}, function (e) { return console.warn('Inbox listener failed:', e); });
+inboxListeners.set(id, rec);
+}
+function syncInboxListeners() { if (!currentUser)
+return; var me = currentUser.toLowerCase(), wanted = new Set(Array.from(getContacts()).filter(function (id) { return isValidUsername(id) && id !== me; })); inboxListeners.forEach(function (rec, id) { if (!wanted.has(id)) {
+try {
+rec.unsub();
+}
+catch (e) { }
+inboxListeners.delete(id);
+delete unreadMap[id];
+delete lastMsgMap[id];
+} }); wanted.forEach(function (id) { if (!inboxListeners.has(id))
+attachInboxListener(id); }); }
+function stopInboxListeners() { inboxListeners.forEach(function (rec) { try {
+rec.unsub();
+}
+catch (e) { } }); inboxListeners.clear(); unreadMap = {}; lastMsgMap = {}; notifiedMsgs.clear(); clearTimer(inboxRefreshTimer); inboxRefreshTimer = null; updateUnreadBadges(); }
+function pingGlobalTyping() {
+var _a;
+if (!currentUser)
+return;
+var now = Date.now();
+if (now - globalLastTypingWrite > TYPING_REFRESH_MS) {
+globalLastTypingWrite = now;
+setDoc(doc(db, 'typing', 'global'), (_a = {}, _a[currentUser] = now, _a), { merge: true }).catch(function (e) { return console.warn(e); });
+}
+clearTimer(globalTypingTimer);
+globalTypingTimer = setTimeout(stopGlobalTyping, TYPING_STOP_MS);
+}
+function stopGlobalTyping() {
+var _a;
+clearTimer(globalTypingTimer);
+globalTypingTimer = null;
+if (!currentUser || !globalLastTypingWrite)
+return;
+globalLastTypingWrite = 0;
+setDoc(doc(db, 'typing', 'global'), (_a = {}, _a[currentUser] = false, _a), { merge: true }).catch(function (e) { return console.warn(e); });
+}
+function pingPrivateTyping() {
+var _a;
+if (!currentUser || !selected)
+return;
+var chatId = getChatId(currentUser, selected), now = Date.now();
+if (privateTypingChatId !== chatId) {
+stopPrivateTyping();
+privateTypingChatId = chatId;
+privateLastTypingWrite = 0;
+}
+if (now - privateLastTypingWrite > TYPING_REFRESH_MS) {
+privateLastTypingWrite = now;
+setDoc(doc(db, 'typing', chatId), (_a = {}, _a[currentUser] = now, _a), { merge: true }).catch(function (e) { return console.warn(e); });
+}
+clearTimer(privateTypingTimer);
+privateTypingTimer = setTimeout(stopPrivateTyping, TYPING_STOP_MS);
+}
+function stopPrivateTyping() {
+var _a;
+clearTimer(privateTypingTimer);
+privateTypingTimer = null;
+if (!currentUser || !privateTypingChatId || !privateLastTypingWrite)
+return;
+var id = privateTypingChatId;
+privateLastTypingWrite = 0;
+setDoc(doc(db, 'typing', id), (_a = {}, _a[currentUser] = false, _a), { merge: true }).catch(function (e) { return console.warn(e); });
+}
+function stopGlobalListeners() { stopGlobalTyping(); if (globalUnsub)
+globalUnsub(); if (globalTypingUnsub)
+globalTypingUnsub(); globalUnsub = null; globalTypingUnsub = null; clearTimer(globalTypingHide); $('globalTyping').style.display = 'none'; $('mentionPopup').style.display = 'none'; mentionOpen = false; }
+function stopPrivateListeners() { stopPrivateTyping(); if (privateUnsub)
+privateUnsub(); if (privateTypingUnsub)
+privateTypingUnsub(); privateUnsub = null; privateTypingUnsub = null; clearTimer(privateTypingHide); $('typingInd').style.display = 'none'; $('chatOptions').style.display = 'none'; selectedMsgIndex = null; window._selectedDoc = null; }
+function showError(prefix, error) { console.error(prefix, error); var m = error && error.message ? error.message : 'Please check your internet connection and Firebase rules.'; var c = error && error.code; if (c === 'auth/email-already-in-use')
+m = 'This username is already registered. Please log in.'; if (c === 'auth/invalid-credential' || c === 'auth/wrong-password' || c === 'auth/user-not-found' || c === 'auth/invalid-login-credentials')
+m = 'Incorrect username or password.'; if (c === 'auth/invalid-email')
+m = 'This username cannot be used. Try a different name.'; if (c === 'auth/weak-password')
+m = 'Password must contain at least 6 characters.'; if (c === 'auth/too-many-requests')
+m = 'Too many attempts. Please try again later.'; if (c === 'auth/network-request-failed')
+m = 'Internet connection failed. Please try again.'; if (c === 'auth/operation-not-allowed')
+m = 'Enable Email/Password sign-in in Firebase Authentication.'; if (c === 'permission-denied') {
+if (permErrorShown)
+return;
+permErrorShown = true;
+m = 'Firestore Rules are blocking this action. Check Firestore Database > Rules.';
+} alert(prefix + '\n' + m); }
+function isBlockedByMe(target) { return Array.isArray(blockMap[currentUser]) && blockMap[currentUser].includes(target); }
+function isBlockedByOther(target) { return Array.isArray(blockMap[target]) && blockMap[target].includes(currentUser); }
+function isRemoved(target) { return Array.isArray(removedMap[currentUser]) && removedMap[currentUser].includes(String(target).toLowerCase()); }
+function saveBlockMap() { try {
+localStorage.setItem('nexa_blockMap', JSON.stringify(blockMap));
+}
+catch (e) { } }
+function saveRemovedMap() { try {
+localStorage.setItem('nexa_removed', JSON.stringify(removedMap));
+}
+catch (e) { } }
+function saveRemovedAtMap() { try {
+localStorage.setItem('nexa_removed_at', JSON.stringify(removedAtMap));
+}
+catch (e) { } }
+function saveContactsMap() { try {
+localStorage.setItem('nexa_contacts', JSON.stringify(contactsMap));
+}
+catch (e) { } }
+function getContacts() { var local = Array.isArray(contactsMap[currentUser]) ? contactsMap[currentUser] : []; return new Set(local.concat(remoteContacts).map(function (x) { return String(x).toLowerCase(); })); }
+function addContact(id) { if (!currentUser || !isValidUsername(id))
+return; var low = id.toLowerCase(); if (!Array.isArray(contactsMap[currentUser]))
+contactsMap[currentUser] = []; if (!contactsMap[currentUser].includes(low)) {
+contactsMap[currentUser].push(low);
+saveContactsMap();
+} unremoveId(low); syncInboxListeners(); setDoc(doc(db, 'users', currentUser), { contacts: arrayUnion(low) }, { merge: true }).catch(function (e) { return console.warn(e); }); setDoc(doc(db, 'users', low), { contacts: arrayUnion(currentUser) }, { merge: true }).catch(function (e) { return console.warn(e); }); }
+function dn(id) { id = String(id || ''); if (currentUser && id.toLowerCase() === currentUser.toLowerCase()) return window.__myName || currentUser; var u = allUsers.find(function (x) { return x.id === id.toLowerCase(); }); return (u && u.name) || id; }
+function setUserDetails() { $('meHome').textContent = window.__myName || currentUser || ''; }
+function registerUser() {
+return __awaiter(this, void 0, void 0, function () { return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+if (!currentUser)
+return [2 /*return*/];
+var rd = { id: currentUser, online: true, loc: myLoc, spam: spamProtectionEnabled, lastSeen: serverTimestamp() }, pd = pendingDisp;
+if (pd && cleanUsername(pd) === currentUser)
+rd.name = pd;
+return [4 /*yield*/, setDoc(doc(db, 'users', currentUser), rd, { merge: true })];
+case 1:
+_a.sent();
+if (pd && pendingDisp === pd)
+pendingDisp = null;
+return [2 /*return*/];
+}
+}); });
+}
+function setOffline() {
+return __awaiter(this, arguments, void 0, function (username) {
+var e_2;
+if (username === void 0) { username = currentUser; }
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+if (!username)
+return [2 /*return*/];
+_a.label = 1;
+case 1:
+_a.trys.push([1, 3, , 4]);
+return [4 /*yield*/, setDoc(doc(db, 'users', username), { id: username, online: false, lastSeen: serverTimestamp() }, { merge: true })];
+case 2:
+_a.sent();
+return [3 /*break*/, 4];
+case 3:
+e_2 = _a.sent();
+console.warn(e_2);
+return [3 /*break*/, 4];
+case 4: return [2 /*return*/];
+}
+});
+});
+}
+function initUsersListener() {
+if (usersUnsub)
+usersUnsub();
+usersUnsub = onSnapshot(collection(db, 'users'), function (snap) {
+allUsers = [];
+snap.forEach(function (d) {
+var u = d.data({ serverTimestamps: 'estimate' }) || {}, realId = String(u.id || d.id).trim().toLowerCase();
+if (!isValidUsername(realId))
+return;
+var ms = 0;
+if (u.lastSeen && typeof u.lastSeen.toMillis === 'function')
+ms = u.lastSeen.toMillis();
+if (currentUser && realId === currentUser.toLowerCase()) {
+window.__myPhoto = u.photo || '';
+remoteContacts = Array.isArray(u.contacts) ? u.contacts.filter(function (x) { return typeof x === 'string'; }) : [];
+window.__myBio = String(u.bio || '');
+if (u.name && String(u.name) !== window.__myName) { window.__myName = String(u.name); try { localStorage.setItem('nexa_dn', window.__myName); } catch (e) { } setUserDetails(); }
+try {
+var rr = Array.isArray(u.removed) ? u.removed.map(function (x) { return String(x).toLowerCase(); }) : [];
+if (window.__rmSynced !== currentUser && !snap.metadata.fromCache) {
+window.__rmSynced = currentUser;
+var locR = Array.isArray(removedMap[currentUser]) ? removedMap[currentUser] : [], missR = locR.filter(function (x) { return rr.indexOf(x) < 0; });
+if (missR.length) {
+setDoc(doc(db, 'users', currentUser), { removed: arrayUnion.apply(null, missR) }, { merge: true }).catch(function (e) { return console.warn(e); });
+rr = rr.concat(missR);
+}
+}
+if (window.__rmSynced === currentUser) {
+removedMap[currentUser] = rr;
+saveRemovedMap();
+}
+} catch (eR) { }
+if (ms && ms !== lastOwnSeen && !d.metadata.hasPendingWrites && !snap.metadata.fromCache) {
+lastOwnSeen = ms;
+var diff = Date.now() - ms;
+serverSkew = Math.abs(diff) < 600000 ? diff : 0;
+}
+return;
+}
+if (Array.isArray(u.blocked))
+blockMap[realId] = u.blocked;
+allUsers.push({ id: realId, name: String(u.name || realId), online: u.online === true, lastSeenMs: ms, photo: u.photo || '', bio: String(u.bio || ''), loc: u.loc === 'global' ? 'global' : 'private', spam: u.spam === true, contacts: Array.isArray(u.contacts) ? u.contacts.map(function (x) { return String(x).toLowerCase(); }) : [] });
+});
+refreshOnline();
+lastOnlineSig = allUsers.map(function (u) { return u.id + (isOnline(u) ? '1' : '0') + (u.loc === 'global' ? 'g' : 'p'); }).join(',');
+syncInboxListeners();
+renderLists();
+updateCounts();
+updateChatStatus();
+}, function (e) { console.error(e); if (!usersErrorShown) {
+usersErrorShown = true;
+alert('Could not load users. Check Firestore rules and internet connection.');
+} });
+}
+window.showApp = function (id) {
+var target = $(id + 'App');
+if (!target)
+return;
+setLoc(id === 'global' ? 'global' : 'private');
+if (id !== 'global')
+stopGlobalListeners();
+if (id !== 'chat')
+stopPrivateListeners();
+document.querySelectorAll('.app').forEach(function (a) { return a.classList.remove('show'); });
+$('auth-screen').style.display = 'none';
+target.classList.add('show');
+if (id === 'inbox' || id === 'online')
+renderLists();
+if (id === 'global') {
+initGlobalListener();
+initGlobalTyping();
+}
+refreshOnline();
+updateCounts();
+updateUnreadBadges();
+focusIndex = 0;
+setTimeout(updateFocus, 100);
+};
+function validateLoginForm() { var u = cleanUsername($('username').value), p = $('password').value; if (!isValidUsername(u)) {
+alert(cpLen(u) > 25 ? 'Username can have at most 25 characters.' : 'Please enter a username (spaces become _ and / is not allowed).');
+$('username').focus();
+return null;
+} if (!p) {
+alert('Please enter your password.');
+$('password').focus();
+return null;
+} return { username: u, password: p }; }
+function enterAccount(isSignup) {
+return __awaiter(this, void 0, void 0, function () { var d, email, e_3; return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+if (busy || !authReady) {
+if (!authReady)
+alert('Firebase is starting. Please try again in a moment.');
+return [2 /*return*/];
+}
+d = validateLoginForm();
+if (!d)
+return [2 /*return*/];
+if (isSignup && d.password.length < 6) {
+alert('Password must contain at least 6 characters.');
+$('password').focus();
+return [2 /*return*/];
+}
+setBusy(true);
+_a.label = 1;
+case 1:
+_a.trys.push([1, 6, 7, 8]);
+email = usernameEmail(d.username);
+pendingName = d.username;
+pendingDisp = isSignup ? String($('username').value || '').replace(/^\s+|\s+$/g, '') : null;
+if (isSignup) { try { window.__prevSpam = localStorage.getItem('nexa_spam_prot'); localStorage.setItem('nexa_spam_prot', 'on'); } catch (e) { } window.__prevSpamVar = spamProtectionEnabled; spamProtectionEnabled = true; updateSpamToggle(); }
+rememberName(d.username);
+if (!isSignup) return [3 /*break*/, 3];
+return [4 /*yield*/, createUserWithEmailAndPassword(auth, email, d.password)];
+case 2:
+var cr_ = _a.sent();
+try { if (cr_ && cr_.user && cr_.user.updateProfile) cr_.user.updateProfile({ displayName: d.username })['catch'](function () { }); } catch (e) { }
+return [3 /*break*/, 5];
+case 3: return [4 /*yield*/, signInWithEmailAndPassword(auth, email, d.password)];
+case 4:
+_a.sent();
+_a.label = 5;
+case 5: return [3 /*break*/, 8];
+case 6:
+e_3 = _a.sent();
+if (isSignup) { spamProtectionEnabled = !!window.__prevSpamVar; try { if (window.__prevSpam === null || window.__prevSpam === undefined) localStorage.removeItem('nexa_spam_prot'); else localStorage.setItem('nexa_spam_prot', window.__prevSpam); } catch (e) { } updateSpamToggle(); }
+showError(isSignup ? 'Could not create account.' : 'Login failed.', e_3);
+return [3 /*break*/, 8];
+case 7:
+setBusy(false);
+return [7 /*endfinally*/];
+case 8: return [2 /*return*/];
+}
+}); });
+}
+$('signupBtn').addEventListener('click', function () { return enterAccount(true); });
+$('loginBtn').addEventListener('click', function () { return enterAccount(false); });
+$('password').addEventListener('keydown', function (e) { if (e.key === 'Enter')
+$('loginBtn').click(); });
+$('username').addEventListener('keydown', function (e) { if (e.key === 'Enter')
+$('password').focus(); });
+$('logoutBtn').addEventListener('click', function () { return __awaiter(_this, void 0, void 0, function () {
+var old, e_4;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+if (busy)
+return [2 /*return*/];
+$('inboxOptions').style.display = 'none';
+if (!confirm('Do you want to log out?'))
+return [2 /*return*/];
+setBusy(true);
+old = currentUser;
+_a.label = 1;
+case 1:
+_a.trys.push([1, 4, 5, 6]);
+stopGlobalListeners();
+stopPrivateListeners();
+stopInboxListeners();
+return [4 /*yield*/, Promise.race([setOffline(old), new Promise(function (r) { setTimeout(r, 2500); })])];
+case 2:
+_a.sent();
+if (usersUnsub)
+usersUnsub();
+usersUnsub = null;
+clearTimer(globalTypingTimer);
+clearTimer(privateTypingTimer);
+selected = null;
+selectedInbox = null;
+selectedMsgIndex = null;
+replyTo = null;
+try {
+localStorage.removeItem('nexa_current'); localStorage.removeItem('nexa_dn'); window.__myName = '';
+}
+catch (e) { }
+return [4 /*yield*/, signOut(auth)];
+case 3:
+_a.sent();
+return [3 /*break*/, 6];
+case 4:
+e_4 = _a.sent();
+showError('Could not log out.', e_4);
+return [3 /*break*/, 6];
+case 5:
+setBusy(false);
+return [7 /*endfinally*/];
+case 6: return [2 /*return*/];
+}
+});
+}); });function showAuth() { document.querySelectorAll('.app').forEach(function (a) { return a.classList.remove('show'); }); $('auth-screen').style.display = 'flex'; }
+onAuthStateChanged(auth, function (user) { return __awaiter(_this, void 0, void 0, function () {
+var version, email, suffix, e_5, username, e_6;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+version = ++authStateVersion;
+authReady = true;
+if (!user) {
+currentUser = null;
+myLoc = 'private';
+allUsers = [];
+demoUsers = [];
+remoteContacts = [];
+serverSkew = 0;
+lastOwnSeen = 0;
+usersErrorShown = false;
+permErrorShown = false;
+try {
+localStorage.removeItem('nexa_current'); localStorage.removeItem('nexa_dn'); window.__myName = '';
+}
+catch (e) { }
+if (usersUnsub)
+usersUnsub();
+usersUnsub = null;
+stopGlobalListeners();
+stopPrivateListeners();
+stopInboxListeners();
+clearTimer(globalTypingTimer);
+clearTimer(privateTypingTimer);
+$('blockedView').style.display = 'none';
+$('settingsView').style.display = 'none';
+$('inboxOptions').style.display = 'none';
+$('searchOnline').value = '';
+$('searchInbox').value = '';
+$('username').value = '';
+$('password').value = '';
+showAuth();
+setBusy(false);
+return [2 /*return*/];
+}
+email = String(user.email || ''), suffix = '@nexachat.invalid';
+if (!!email.toLowerCase().endsWith(suffix)) return [3 /*break*/, 5];
+_a.label = 1;
+case 1:
+_a.trys.push([1, 3, , 4]);
+return [4 /*yield*/, signOut(auth)];
+case 2:
+_a.sent();
+return [3 /*break*/, 4];
+case 3:
+e_5 = _a.sent();
+return [3 /*break*/, 4];
+case 4:
+showAuth();
+return [2 /*return*/];
+case 5:
+username = usernameFromUser(user);
+if (!!isValidUsername(username)) return [3 /*break*/, 10];
+currentUser = null;
+_a.label = 6;
+case 6:
+_a.trys.push([6, 8, , 9]);
+return [4 /*yield*/, signOut(auth)];
+case 7:
+_a.sent();
+return [3 /*break*/, 9];
+case 8:
+e_6 = _a.sent();
+return [3 /*break*/, 9];
+case 9:
+showAuth();
+return [2 /*return*/];
+case 10:
+currentUser = username;
+try {
+localStorage.setItem('nexa_current', currentUser);
+}
+catch (e) { }
+setUserDetails();
+registerUser().catch(function (e) { console.error(e); if (version === authStateVersion)
+showError('Login succeeded, but the user profile could not be saved.', e); });
+initUsersListener();
+syncInboxListeners();
+if (document.querySelector('.app.show'))
+$('auth-screen').style.display = 'none';
+else
+showApp('home');
+return [2 /*return*/];
+}
+});
+}); });
+/* ===== CLEANUP (100% working purge) ===== */
+var lastPurge = {};
+var delDoc = function (d) { return deleteWithChunks(d.ref, d.data().vidChunks).catch(function () { }); };
+function purge(colRef, keep, maxAge) {
+return __awaiter(this, void 0, void 0, function () {
+var head, now_1, jobs_1, last, r, s, e_7;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+_a.trys.push([0, 7, , 8]);
+return [4 /*yield*/, getDocs(query(colRef, orderBy('createdAt', 'desc'), limit(keep)))];
+case 1:
+head = _a.sent(), now_1 = nowMs(), jobs_1 = [];
+head.docs.forEach(function (d) { var c = d.data({ serverTimestamps: 'estimate' }).createdAt; if (maxAge && c && c.toMillis && now_1 - c.toMillis() > maxAge)
+jobs_1.push(delDoc(d)); });
+last = head.docs[head.docs.length - 1];
+if (!(head.size >= keep && last)) return [3 /*break*/, 5];
+r = 0;
+_a.label = 2;
+case 2:
+if (!(r < 10)) return [3 /*break*/, 5];
+return [4 /*yield*/, getDocs(query(colRef, orderBy('createdAt', 'desc'), startAfter(last), limit(100)))];
+case 3:
+s = _a.sent();
+if (!s.size)
+return [3 /*break*/, 5];
+s.docs.forEach(function (d) { return jobs_1.push(delDoc(d)); });
+if (s.size < 100)
+return [3 /*break*/, 5];
+last = s.docs[s.docs.length - 1];
+_a.label = 4;
+case 4:
+r++;
+return [3 /*break*/, 2];
+case 5: return [4 /*yield*/, Promise.all(jobs_1)];
+case 6:
+_a.sent();
+return [3 /*break*/, 8];
+case 7:
+e_7 = _a.sent();
+console.warn('purge', e_7);
+return [3 /*break*/, 8];
+case 8: return [2 /*return*/];
+}
+});
+});
+}
+function cleanupGlobalChat() { var t = Date.now(), w = lastPurge.g || 0; if (t - w < 3000) {
+if (!lastPurge.gt)
+lastPurge.gt = setTimeout(function () { lastPurge.gt = 0; cleanupGlobalChat(); }, 3000 - (t - w) + 100);
+return;
+} lastPurge.g = t; purge(collection(db, 'globalChat'), KEEP_MSGS, 0); }
+function cleanupPrivateChat(chatId) { var t = Date.now(), w = lastPurge[chatId] || 0; if (t - w < 4000) {
+var k_1 = 't_' + chatId;
+if (!lastPurge[k_1])
+lastPurge[k_1] = setTimeout(function () { lastPurge[k_1] = 0; cleanupPrivateChat(chatId); }, 4000 - (t - w) + 100);
+return;
+} lastPurge[chatId] = t; purge(collection(db, 'privateChats', chatId, 'messages'), KEEP_PRIV, 0); }
+setInterval(function () { if (!currentUser)
+return; cleanupGlobalChat(); getContacts().forEach(function (id) { return isValidUsername(id) && cleanupPrivateChat(getChatId(currentUser, id)); }); }, 600000);
+function initGlobalListener() {
+if (globalUnsub)
+globalUnsub();
+cleanupGlobalChat();
+var q = query(collection(db, 'globalChat'), orderBy('createdAt', 'desc'), limit(KEEP_MSGS));
+globalUnsub = onSnapshot(q, function (snap) {
+var docs = [];
+snap.forEach(function (d) { return docs.push({ id: d.id, data: d.data({ serverTimestamps: 'estimate' }) || {} }); });
+docs.reverse();
+if (!snap.metadata.fromCache && snap.size >= KEEP_MSGS) cleanupGlobalChat();
+var area = $('globalArea');
+area.replaceChildren();
+docs.forEach(function (item) {
+var m = item.data, sender = String(m.name || 'User'), text = String(m.text || ''), isMe = String(m.uid || m.name || '').toLowerCase() === String(currentUser || '').toLowerCase(), mention = String(m.mention || ''), isMentioned = mention && currentUser && mention.toLowerCase() === currentUser.toLowerCase();
+var bubble = document.createElement('div');
+bubble.className = 'msg ' + (isMe ? 'me' : 'other') + (isMentioned ? ' highlight' : '');
+var name = document.createElement('div');
+name.style.cssText = 'font-size:10px;font-weight:800;margin-bottom:2px;color:' + (isMe ? '#a5f3fc' : '#f0abfc');
+name.textContent = sender;
+bubble.appendChild(name);
+var body = document.createElement('div');
+appendMentionText(body, text, mention);
+bubble.appendChild(body);
+var time = document.createElement('div');
+time.style.cssText = 'font-size:9px;color:#e7d6a5;color:var(--muted);text-align:right;margin-top:3px';
+time.textContent = String(m.time || '');
+bubble.appendChild(time);
+area.appendChild(bubble);
+});
+area.scrollTop = area.scrollHeight;
+}, function (e) { console.error(e); $('globalArea').textContent = 'Could not load messages. Check your internet and Firebase rules.'; });
+}
+function appendMentionText(container, text, mention) {
+if (!mention || mention === 'undefined' || mention === 'null') {
+container.textContent = text;
+return;
+}
+var escaped = mention.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+var regex;
+try {
+regex = new RegExp('@' + escaped + '(?![a-zA-Z0-9_])', 'ig');
+}
+catch (e) {
+container.textContent = text;
+return;
+}
+var last = 0, match;
+while ((match = regex.exec(text)) !== null) {
+container.appendChild(document.createTextNode(text.slice(last, match.index)));
+var span = document.createElement('span');
+span.className = 'mention';
+span.textContent = match[0];
+container.appendChild(span);
+last = match.index + match[0].length;
+}
+container.appendChild(document.createTextNode(text.slice(last)));
+}
+function findMention(text) { var low = text.toLowerCase(), best = null, bestAt = -1, i, id, at, k; for (i = 0; i < allUsers.length; i++) { id = allUsers[i].id; at = low.indexOf('@' + id.toLowerCase()); while (at >= 0) { k = low.charAt(at + 1 + id.length); if (!k || /[\s.,!?;:)\]}"']/.test(k)) { if (best === null || at < bestAt || (at === bestAt && id.length > best.length)) { best = id; bestAt = at; } break; } at = low.indexOf('@' + id.toLowerCase(), at + 1); } } return best; }
+function sendGlobal() {
+return __awaiter(this, void 0, void 0, function () {
+var input, text, match, mentionVal, e_8;
+return __generator(this, function (_a) {
+switch (_a.label) {
+case 0:
+input = $('globalInput'), text = input.value.trim();
+if (!currentUser)
+return [2 /*return*/, alert('Please log in first.')];
+if (!text)
+return [2 /*return*/];
+if (text.length > 2000)
+return [2 /*return*/, alert('Message is too long. Maximum 2000 characters.')];
+mentionVal = findMention(text);
+input.value = '';
+$('mentionPopup').style.display = 'none';
+mentionOpen = false;
+stopGlobalTyping();
+_a.label = 1;
+case 1:
+_a.trys.push([1, 3, , 4]);
+return [4 /*yield*/, addDoc(collection(db, 'globalChat'), { name: (window.__myName || currentUser), uid: currentUser, text: text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), mention: mentionVal, createdAt: serverTimestamp() })];
+case 2:
+_a.sent();
+cleanupGlobalChat();
+return [3 /*break*/, 4];
+case 3:
+e_8 = _a.sent();
+if (!input.value)
+input.value = text;
+showError('Could not send global message.', e_8);
+return [3 /*break*/, 4];
+case 4: return [2 /*return*/];
+}
+});
+});
+}
+window.sendGlobal = sendGlobal;
+function openMention() {
+var pop = $('mentionPopup');
+if (mentionOpen) {
+pop.style.display = 'none';
+mentionOpen = false;
+return;
+}
+refreshOnline();
+var users = demoUsers.filter(function (u) { return isValidUsername(u.id) && u.loc === 'global'; });
+pop.replaceChildren();
+if (!users.length) {
+var x = document.createElement('div');
+x.style.cssText = 'color:#e7d6a5;color:var(--muted);padding:8px;font-size:11px';
+x.textContent = 'No users online';
+pop.appendChild(x);
+}
+else
+users.forEach(function (u, i) { var x = document.createElement('div'); x.className = 'mention-item' + (i === mentionIndex ? ' active' : ''); x.textContent = '@' + u.id; x.tabIndex = 0; x.addEventListener('click', function () { return insertMention(u.id); }); pop.appendChild(x); });
+pop.style.display = 'block';
+mentionOpen = true;
+setTimeout(updateFocus, 30);
+}
+window.openMention = openMention;
+function insertMention(id) {
+if (!isValidUsername(id))
+return;
+var input = $('globalInput'), value = input.value, cursor = typeof input.selectionStart === 'number' ? input.selectionStart : value.length, before = value.slice(0, cursor), after = value.slice(cursor), at = before.lastIndexOf('@');
+if (at >= 0 && !/\s/.test(before.slice(at + 1)))
+input.value = before.slice(0, at) + '@' + id + ' ' + after;
+else
+input.value = before + (before && !/\s$/.test(before) ? ' ' : '') + '@' + id + ' ' + after;
+$('mentionPopup').style.display = 'none';
+mentionOpen = false;
+input.focus();
+try {
+input.setSelectionRange(input.value.length, input.value.length);
+}
+catch (e) { }
+}
+window.insertMention = insertMention;
+function isTypingValue(v) { return v === true || (typeof v === 'number' && v > 0); }
+function initGlobalTyping() {
+clearTimer(globalTypingHide);
+if (globalTypingUnsub)
+globalTypingUnsub();
+var gBase = null, gShow = {};
+function gRender() {
+var el = $('globalTyping'), now = Date.now(), names = [], k;
+clearTimer(globalTypingHide);
+for (k in gShow) { if (gShow[k] > now) names.push(k); else delete gShow[k]; }
+if (names.length) {
+el.textContent = names.map(function (n) { return dn(n); }).join(', ') + (names.length > 1 ? ' are typing...' : ' is typing...');
+el.style.display = 'block';
+globalTypingHide = setTimeout(gRender, 800);
+}
+else
+el.style.display = 'none';
+}
+globalTypingUnsub = onSnapshot(doc(db, 'typing', 'global'), function (snap) {
+var data = snap.exists ? (snap.data() || {}) : {}, k, meLow = String(currentUser || '').toLowerCase();
+/* pehla/cached snapshot sirf baseline: purani value par "typing" nahi dikhana */
+if (snap.metadata.fromCache || gBase === null) { gBase = {}; for (k in data) gBase[k] = data[k]; return; }
+for (k in data) {
+if (data[k] === gBase[k]) continue;
+gBase[k] = data[k];
+if (k.toLowerCase() === meLow || !isValidUsername(k)) continue;
+if (isTypingValue(data[k])) gShow[k] = Date.now() + TYPING_SHOW_MS; else delete gShow[k];
+}
+gRender();
+}, function (e) { return console.error(e); });
+}
+$('globalInput').addEventListener('input', function () {
+var input = $('globalInput'), value = input.value, cursor = typeof input.selectionStart === 'number' ? input.selectionStart : value.length, before = value.slice(0, cursor), at = before.lastIndexOf('@'), candidate = at >= 0 ? before.slice(at + 1) : '';
+if (at >= 0 && !/\s/.test(candidate) && candidate.length <= 50) {
+var q = candidate.toLowerCase();
+if (!mentionOpen || q !== lastMentionQuery) {
+lastMentionQuery = q;
+showMentionSuggestions(q);
+}
+}
+else {
+$('mentionPopup').style.display = 'none';
+mentionOpen = false;
+lastMentionQuery = '';
+}
+if (value.trim())
+pingGlobalTyping();
+else
+stopGlobalTyping();
+});
+function showMentionSuggestions(search) {
+var pop = $('mentionPopup');
+refreshOnline();
+var matches = demoUsers.filter(function (u) { return isValidUsername(u.id) && u.loc === 'global' && (u.id.toLowerCase().includes(search) || u.name.toLowerCase().includes(search)); });
+pop.replaceChildren();
+if (!matches.length) {
+var x = document.createElement('div');
+x.style.cssText = 'color:#e7d6a5;color:var(--muted);padding:8px;font-size:11px';
+x.textContent = 'No users found';
+pop.appendChild(x);
+}
+else
+matches.forEach(function (u) { var x = document.createElement('div'); x.className = 'mention-item'; x.textContent = '@' + u.id; x.tabIndex = 0; x.addEventListener('click', function () { return insertMention(u.id); }); pop.appendChild(x); });
+pop.style.display = 'block';
+mentionOpen = true;
+}
+$('globalInput').addEventListener('keydown', function (e) { if (e.key === 'Enter') {
+e.preventDefault();
+sendGlobal();
+}
+else if (e.key === 'Escape') {
+$('mentionPopup').style.display = 'none';
+mentionOpen = false;
+} });
+$('globalSendBtn').addEventListener('click', sendGlobal);
+window.renderLists = function () {
+refreshOnline();
+var qo = $('searchOnline').value.trim().toLowerCase(), qi = $('searchInbox').value.trim().toLowerCase(), ol = $('onlineList'), il = $('inboxList');
+ol.replaceChildren();
+il.replaceChildren();
+var onlineFiltered = (qo ? allUsers.filter(function (u) { return isValidUsername(u.id) && !inGlobal(u) && (u.id.toLowerCase().includes(qo) || u.name.toLowerCase().includes(qo)); }) : demoUsers.filter(function (u) { return isValidUsername(u.id) && !inGlobal(u); })).slice().sort(function (a, b) { return (isOnline(b) ? 1 : 0) - (isOnline(a) ? 1 : 0); });
+if (!onlineFiltered.length)
+addEmpty(ol, qo ? 'No users found' : 'No users online');
+else
+onlineFiltered.forEach(function (u) { return ol.appendChild(createUserRow(u, false)); });
+var contacts = getContacts(), inboxFiltered = (qi ? allUsers.filter(function (u) { return isValidUsername(u.id) && (u.id.toLowerCase().includes(qi) || u.name.toLowerCase().includes(qi)); }) : allUsers.filter(function (u) { return isValidUsername(u.id) && contacts.has(u.id.toLowerCase()) && !isRemoved(u.id); })).slice();
+inboxFiltered.sort(function (a, b) { var ua = (unreadMap[a.id] || 0) > 0, ub = (unreadMap[b.id] || 0) > 0; if (ua !== ub)
