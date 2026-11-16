@@ -4142,3 +4142,941 @@ window.addEventListener('load',function(){sweep();setTimeout(sweep,1500);setTime
     ' <div id="vrChat"></div>',
     ' <div id="vrTyping"></div>',
     ' <div id="vrSendRow"><button type="button" class="vr-b" id="vrMenuB" title="Menu">+</button><input id="vrMsg" type="text" maxlength="300" placeholder="Type a message" autocomplete="off"><button type="button" class="vr-b vr-sm" id="vrSend">Send</button></div>',
+    ' <div id="vrBar"><div id="vrBarMid"></div><button type="button" class="vr-b vr-sm" id="vrRoomBack">&#8592;</button></div>',
+    '</div>',
+
+    '<div id="vrMenu" class="vr-pop"><div class="vr-pc">',
+    ' <button type="button" class="vr-b vr-green vr-w" id="vrJoinV">&#127908; Join Voice</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMMute">1. Mute</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMUnmute">2. Unmute</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMMembers">3. Members</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMSong">4. Audio Song</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMSpeak">&#128266; Speaking</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMStop">5. Stop Song</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrManageB" style="display:none">&#9881; Manage Room <span class="vr-badge" id="vrReqN" style="display:none">0</span></button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMImg">Image</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMClose">6. Close Menu</button>',
+    '</div></div>',
+
+    '<div id="vrMembers" class="vr-pop"><div class="vr-pc">',
+    ' <div class="vr-pt" id="vrMembersT">Members</div><div id="vrMembersL"></div>',
+    ' <button type="button" class="vr-b vr-w" id="vrLeaveRoom">Leave this room</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrMembersClose">CLOSE</button>',
+    '</div></div>',
+
+    '<div id="vrSpeak" class="vr-pop"><div class="vr-pc">',
+    ' <div class="vr-pt">Speaking now</div><div id="vrSpeakL"></div>',
+    ' <button type="button" class="vr-b vr-w" id="vrSpeakClose">CLOSE</button>',
+    '</div></div>',
+
+    '<div id="vrSong" class="vr-pop"><div class="vr-pc">',
+    ' <div class="vr-pt">Audio Song</div><div id="vrSongL"></div>',
+    ' <button type="button" class="vr-b vr-w" id="vrSongPick">Choose audio file</button>',
+    ' <button type="button" class="vr-b vr-red vr-w" id="vrSongStop">Stop Song</button>',
+    ' <button type="button" class="vr-b vr-w" id="vrSongClose">Close Song</button>',
+    '</div></div>',
+
+    '<div id="vrManage" class="vr-pop"><div class="vr-pc">',
+    ' <div class="vr-pt">Manage Room</div>',
+    ' <div class="vr-sub">Join requests</div><div id="vrReqL"></div>',
+    ' <div id="vrOwnerBox">',
+    '  <button type="button" class="vr-b vr-w" id="vrLockB">Lock room</button>',
+    '  <button type="button" class="vr-b vr-red vr-w" id="vrCloseRoomB">Close room</button>',
+    '  <div class="vr-sub" style="margin-top:5px">Room code (share for private rooms):</div>',
+    '  <input class="vr-in" id="vrCodeShow" type="text" readonly>',
+    ' </div>',
+    ' <button type="button" class="vr-b vr-w" id="vrManageClose">CLOSE</button>',
+    '</div></div>',
+
+    '<div id="vrToast"></div>',
+    '<input type="file" id="vrFile" accept="audio/*" style="display:none">',
+    '<input type="file" id="vrImgFile" accept="image/*" style="display:none">'
+  ].join('\n');
+
+  /* ------------------------------ BACKEND ------------------------------ */
+  function loadSdk(i, done) {
+    if (g.firebase && g.firebase.database) { done(true); return; }
+    if (i >= DB_SDK.length) { done(false); return; }
+    var s = document.createElement('script');
+    s.src = DB_SDK[i];
+    s.onload = function () { if (g.firebase && g.firebase.database) done(true); else loadSdk(i + 1, done); };
+    s.onerror = function () { loadSdk(i + 1, done); };
+    document.getElementsByTagName('head')[0].appendChild(s);
+  }
+  function backend(cb) {
+    if (!g.firebase) { cb('Firebase is not loaded.'); return; }
+    var u = null; try { u = g.firebase.auth().currentUser; } catch (e) { }
+    var me = myId();
+    if (!u || !me) { cb('Please log in again to use Voice Rooms.'); return; }
+    if (S.uid && S.uid !== u.uid) { resetAll(); }
+    loadSdk(0, function (ok) {
+      if (!ok) { cb('Could not load the database library. Check your internet.'); return; }
+      try {
+        if (!S.rdb) S.rdb = g.firebase.app().database(DB_URL);
+        S.TS = g.firebase.database.ServerValue.TIMESTAMP;
+      } catch (e) { cb('Database error: ' + errText(e)); return; }
+      S.uid = u.uid; S.me = me; S.myName = myDisplay();
+      if (!S.connRef) {
+        S.connRef = S.rdb.ref('.info/connected');
+        S.connRef.on('value', function (s) { S.online = s.val() === true; if (S.inRoom) renderStat(); });
+      }
+      cb(null);
+    });
+  }
+  function resetAll() {
+    try { leaveVoice(true); } catch (e) { }
+    offAll(S.listRefs); offAll(S.roomRefs); offAll(S.infoRefs);
+    S.inRoom = false; S.cur = null; S.room = null;
+  }
+
+  /* ------------------------------ SCREENS ------------------------------ */
+  var SCREENS = ['vrList', 'vrCreate', 'vrInfo', 'vrRoom'], POPS = ['vrMenu', 'vrMembers', 'vrSpeak', 'vrSong', 'vrManage'];
+  function showScr(id) {
+    SCREENS.forEach(function (x) { $(x).className = 'vr-scr' + (x === id ? ' on' : ''); });
+    S.scr = id; closePops(); focusFirst();
+  }
+  function popOn() { for (var i = 0; i < POPS.length; i++) if ($(POPS[i]).className.indexOf('on') >= 0) return POPS[i]; return null; }
+  function closePops() { POPS.forEach(function (p) { $(p).className = 'vr-pop'; }); }
+  function openPop(id) {
+    closePops(); $(id).className = 'vr-pop on';
+    if (id === 'vrMembers') renderMembersPop();
+    if (id === 'vrSpeak') renderSpeakPop();
+    if (id === 'vrSong') renderSongPop();
+    if (id === 'vrManage') renderManage();
+    if (id === 'vrMenu') renderMenu();
+    focusFirst();
+  }
+  function container() { var p = popOn(); return p ? $(p) : $(S.scr); }
+  function focusables(c) {
+    var l = c.querySelectorAll('button,input,[tabindex="0"]'), r = [];
+    for (var i = 0; i < l.length; i++) {
+      var e = l[i];
+      if (e.disabled || e.type === 'file' || (e.offsetWidth === 0 && e.offsetHeight === 0)) continue;
+      r.push(e);
+    }
+    return r;
+  }
+  function focusFirst() {
+    setTimeout(function () {
+      var f = focusables(container()); if (!f.length) return;
+      var pick = f[0];
+      if (!popOn() && S.scr === 'vrRoom') { var m = $('vrMsg'); pick = m; }
+      try { pick.focus(); } catch (e) { }
+    }, 30);
+  }
+  function move(dir) {
+    var f = focusables(container()); if (!f.length) return;
+    var i = f.indexOf(document.activeElement);
+    i = i < 0 ? 0 : Math.max(0, Math.min(f.length - 1, i + dir));
+    try { f[i].focus(); if (f[i].scrollIntoView) f[i].scrollIntoView(false); } catch (e) { }
+  }
+  function back() {
+    if (popOn()) { closePops(); focusFirst(); return; }
+    if (S.scr === 'vrRoom') { exitRoom(); return; }
+    if (S.scr === 'vrInfo') { leaveInfo(); return; }
+    if (S.scr === 'vrCreate') { showScr('vrList'); return; }
+    closeVR();
+  }
+
+  /* ------------------------------ OPEN / CLOSE ------------------------------ */
+  function openVR() {
+    S.open = true; $('vrRoot').style.display = 'block';
+    showScr('vrList'); setListMsg('Connecting…', false);
+    backend(function (err) {
+      if (err) { setListMsg(err, true); return; }
+      setListMsg('', false); startList();
+    });
+  }
+  function closeVR() {
+    if (S.inRoom) exitRoom(true);
+    offAll(S.listRefs); offAll(S.infoRefs);
+    S.open = false; $('vrRoot').style.display = 'none'; closePops();
+    try { var b = $('searchInbox'); if (b) b.blur(); } catch (e) { }
+  }
+  function setListMsg(t, bad) { var m = $('vrListMsg'); m.textContent = t; m.className = 'vr-msg' + (bad ? ' vr-err' : ''); }
+
+  /* ------------------------------ ROOM LIST ------------------------------ */
+  function startList() {
+    offAll(S.listRefs);
+    var q = S.rdb.ref('vrooms').orderByChild('createdAt').limitToLast(40);
+    on(S.listRefs, q, 'value', function (s) { S.rooms = s.val() || {}; renderRooms(); });
+    on(S.listRefs, S.rdb.ref('vpresence'), 'value', function (s) { S.presence = s.val() || {}; renderRooms(); });
+  }
+  function activeCount(rid) { return keys(S.presence[rid]).length; }
+  function renderRooms() {
+    if (S.scr !== 'vrList') return;
+    var box = $('vrRooms'), keep = document.activeElement && document.activeElement.getAttribute && document.activeElement.getAttribute('data-rid');
+    clear(box);
+    var mine = myRooms(), list = sorted(S.rooms, function (a, b) {
+      var x = activeCount(b.k) - activeCount(a.k); if (x) return x;
+      return (b.v.createdAt || 0) - (a.v.createdAt || 0);
+    }), n = 0;
+    list.forEach(function (it) {
+      var r = it.v; if (!r || !r.name) return;
+      if (r.privacy === 'private' && r.owner !== S.uid && mine.indexOf(it.k) < 0) return;
+      n++;
+      var b = h('button', 'vr-row'); b.type = 'button'; b.setAttribute('data-rid', it.k);
+      var nm = h('span', 'n'); nm.textContent = (r.privacy === 'private' ? '🔒 ' : '') + r.name + (r.locked ? ' (locked)' : '');
+      var m = h('span', 'm'), ac = activeCount(it.k), d = h('span', 'vr-dot' + (ac ? '' : ' off'));
+      m.appendChild(d); m.appendChild(document.createTextNode((ac ? 'Active (' + ac + ' here)' : 'Idle') + ' • ' + (r.count || 0) + ' member' + ((r.count || 0) === 1 ? '' : 's')));
+      var o = h('span', 'm', 'Owner: ' + (r.ownerName || r.ownerId || '?'));
+      b.appendChild(nm); b.appendChild(m); b.appendChild(o);
+      b.onclick = function () { openRoom(it.k); };
+      box.appendChild(b);
+    });
+    if (!n) box.appendChild(h('div', 'vr-msg', 'No rooms yet. Be the first: tap CREATE YOUR ROOM +'));
+    if (keep) { var e = box.querySelector('[data-rid="' + keep + '"]'); if (e) try { e.focus(); } catch (x) { } }
+  }
+
+  /* ------------------------------ CREATE ROOM ------------------------------ */
+  function setPriv(p) {
+    S.newPriv = p;
+    $('vrPubB').className = p === 'public' ? 'sel' : '';
+    $('vrPrivB').className = p === 'private' ? 'sel' : '';
+    $('vrPrivNote').textContent = p === 'public' ? 'Public: everyone can see it in the list.' : 'Private: hidden from the list. People need the room code.';
+  }
+  function openCreate() { $('vrName').value = ''; $('vrDesc').value = ''; $('vrCreateErr').textContent = ''; setPriv('public'); showScr('vrCreate'); }
+  function createRoom() {
+    var name = $('vrName').value.replace(/^\s+|\s+$/g, ''), desc = $('vrDesc').value.replace(/^\s+|\s+$/g, ''), er = $('vrCreateErr');
+    if (!name) { er.textContent = 'Please enter a room name.'; return; }
+    var owned = 0; keys(S.rooms).forEach(function (k) { if (S.rooms[k] && S.rooms[k].owner === S.uid) owned++; });
+    if (owned >= MAX_MY_ROOMS) { er.textContent = 'You can own up to ' + MAX_MY_ROOMS + ' rooms. Close one first.'; return; }
+    er.textContent = ''; $('vrCreateGo').disabled = true;
+    var ref = S.rdb.ref('vrooms').push(), rid = ref.key;
+    var data = { name: cut(name, 30), owner: S.uid, ownerId: S.me, ownerName: S.myName, privacy: S.newPriv || 'public', locked: false, count: 1, createdAt: S.TS };
+    if (desc) data.desc = cut(desc, 80);
+    ref.set(data).then(function () {
+      return S.rdb.ref('vmembers/' + rid + '/' + S.uid).set({ id: S.me, name: S.myName, role: 'owner', ts: S.TS });
+    }).then(function () {
+      rememberRoom(rid); $('vrCreateGo').disabled = false; openRoom(rid);
+    }, function (e) {
+      $('vrCreateGo').disabled = false; er.textContent = errText(e);
+      try { ref.remove(); } catch (x) { }
+    });
+  }
+
+  /* ------------------------------ OPEN ROOM / JOIN REQUEST ------------------------------ */
+  function openRoom(rid) {
+    rid = String(rid || '').replace(/^\s+|\s+$/g, '');
+    if (!rid || /[.#$\[\]\/]/.test(rid)) { toast('Invalid room code.'); return; }
+    S.rdb.ref('vrooms/' + rid).once('value').then(function (rs) {
+      if (!rs.exists()) { toast('Room not found.'); return null; }
+      S.cur = rid; S.room = rs.val();
+      return S.rdb.ref('vmembers/' + rid + '/' + S.uid).once('value').then(function (ms) {
+        if (ms.exists()) enterRoom(rid); else showInfo(rid);
+      });
+    }).then(null, fail);
+  }
+  function leaveInfo() { offAll(S.infoRefs); S.cur = null; showScr('vrList'); }
+  function showInfo(rid) {
+    offAll(S.infoRefs); showScr('vrInfo');
+    var body = $('vrInfoBody'), reqSt = null, busy = false;
+    function draw() {
+      var r = S.room; clear(body); if (!r) return;
+      var c = h('div', 'vr-card vr-flex');
+      c.appendChild(av(r.ownerId, r.ownerName, 40));
+      var t = h('div', 'vr-grow'); t.style.marginLeft = '6px';
+      t.appendChild(h('div', 'vr-nm', r.ownerName || r.ownerId));
+      t.appendChild(h('div', 'vr-sub', '@' + (r.ownerId || '') + ' • Owner'));
+      c.appendChild(t); body.appendChild(c);
+      body.appendChild(h('div', 'vr-pt', (r.privacy === 'private' ? '🔒 ' : '') + r.name));
+      if (r.desc) body.appendChild(h('div', 'vr-msg', r.desc));
+      var ac = activeCount(rid);
+      body.appendChild(h('div', 'vr-msg', 'Members: ' + (r.count || 0) + ' • ' + (ac ? 'Active' : 'Idle')));
+      var st = h('div', 'vr-msg'); body.appendChild(st);
+      var status = reqSt && reqSt.status;
+      function btn(label, cls, fn) { var b = h('button', 'vr-b vr-w ' + (cls || ''), label); b.type = 'button'; b.onclick = fn; body.appendChild(b); return b; }
+      if (status === 'pending') {
+        st.textContent = 'Request sent. Waiting for the owner to accept.'; st.className = 'vr-msg vr-ok';
+        btn('Cancel Request', '', function () { S.rdb.ref('vreq/' + rid + '/' + S.uid).remove().then(null, fail); });
+      } else if (status === 'rejected') {
+        st.textContent = 'Your request to join this voice room has been rejected.'; st.className = 'vr-msg vr-err';
+        if (!r.locked) btn('Send Request Again', '', function () { sendRequest(rid, true); });
+      } else {
+        if (r.locked) { st.textContent = 'This room is locked. New members cannot join right now.'; st.className = 'vr-msg vr-err'; }
+        var b = btn('SEND REQUEST', 'vr-green', function () { if (busy) return; busy = true; sendRequest(rid, false, function () { busy = false; }); });
+        if (r.locked) b.disabled = true;
+      }
+      var cur = document.activeElement; if (!cur || cur === document.body) focusFirst();
+    }
+    on(S.infoRefs, S.rdb.ref('vrooms/' + rid), 'value', function (s) { if (!s.exists()) { toast('This room was closed.'); leaveInfo(); return; } S.room = s.val(); draw(); });
+    on(S.infoRefs, S.rdb.ref('vreq/' + rid + '/' + S.uid), 'value', function (s) { reqSt = s.val(); draw(); });
+    on(S.infoRefs, S.rdb.ref('vmembers/' + rid + '/' + S.uid), 'value', function (s) { if (s.exists() && S.scr === 'vrInfo') { offAll(S.infoRefs); enterRoom(rid); } });
+    on(S.infoRefs, S.rdb.ref('vpresence/' + rid), 'value', function (s) { S.presence[rid] = s.val() || {}; });
+  }
+  function sendRequest(rid, again, done) {
+    var ref = S.rdb.ref('vreq/' + rid + '/' + S.uid);
+    var data = { id: S.me, name: S.myName, status: 'pending', ts: S.TS };
+    ref.once('value').then(function (s) {
+      var v = s.val();
+      if (v && v.status === 'pending') { toast('Your request is already pending.'); return null; }
+      if (v && !again) { return null; }
+      return (v ? ref.remove() : Promise.resolve()).then(function () { return ref.set(data); }).then(function () { rememberRoom(rid); toast('Request sent.'); });
+    }).then(function () { if (done) done(); }, function (e) { if (done) done(); fail(e); });
+  }
+
+  /* ------------------------------ ENTER / EXIT ROOM ------------------------------ */
+  function isOwner() { return !!(S.room && S.room.owner === S.uid); }
+  function myRole() { var m = S.members[S.uid]; return m ? m.role : ''; }
+  function isMgr() { return isOwner() || myRole() === 'mod'; }
+  function enterRoom(rid) {
+    offAll(S.roomRefs); offAll(S.infoRefs);
+    S.cur = rid; S.inRoom = true; S.exiting = false;
+    S.members = {}; S.voice = {}; S.pres = {}; S.reqs = []; S.typing = {}; S.seen = {}; S.speaking = {}; S.lmute = {}; S.msgKeys = [];
+    clear($('vrChat')); $('vrTyping').textContent = '';
+    $('vrRoomTitle').textContent = (S.room && S.room.name) || 'Room';
+    var cm = compat(); $('vrCompat').style.display = cm.length ? 'block' : 'none'; $('vrCompat').textContent = cm.length ? compatMsg(cm) : '';
+    rememberRoom(rid); showScr('vrRoom'); renderAll();
+    var rdb = S.rdb, gotMembers = false;
+    on(S.roomRefs, rdb.ref('vrooms/' + rid), 'value', function (s) {
+      if (!s.exists()) { forceExit('This voice room was closed by the owner.'); return; }
+      S.room = s.val(); $('vrRoomTitle').textContent = S.room.name; renderAll();
+    });
+    on(S.roomRefs, rdb.ref('vmembers/' + rid), 'value', function (s) {
+      S.members = s.val() || {};
+      if (!S.members[S.uid]) {
+        if (gotMembers) { setTimeout(function () { if (!S.exiting && S.inRoom && S.cur === rid && !S.members[S.uid]) forceExit('You were removed from this voice room.'); }, 700); }
+        return;
+      }
+      gotMembers = true; watchRequests(); renderAll();
+    }, function () { });
+    on(S.roomRefs, rdb.ref('vmsgs/' + rid).limitToLast(50), 'child_added', function (s) { addMsg(s.val(), s.key); });
+    on(S.roomRefs, rdb.ref('vtyping/' + rid), 'value', function (s) { S.typing = s.val() || {}; renderTyping(); });
+    on(S.roomRefs, rdb.ref('vvoice/' + rid), 'value', function (s) { S.voice = s.val() || {}; syncPeers(); renderChips(); renderStat(); renderMembersIfOpen(); });
+    on(S.roomRefs, rdb.ref('vpresence/' + rid), 'value', function (s) { S.pres = s.val() || {}; renderChips(); renderStat(); });
+    var pr = rdb.ref('vpresence/' + rid + '/' + S.uid);
+    pr.set(true).then(null, function () { }); try { pr.onDisconnect().remove(); } catch (e) { }
+    setTimeout(function () { if (S.cur === rid) trimMsgs(); }, 4000);
+    S.presRef = pr;
+  }
+  function watchRequests() {
+    var want = isMgr();
+    if (want && !S.reqRef) {
+      S.reqRef = S.rdb.ref('vreq/' + S.cur);
+      S.reqRef.on('value', function (s) {
+        var v = s.val() || {}; S.reqs = [];
+        keys(v).forEach(function (k) { if (v[k] && v[k].status === 'pending') S.reqs.push({ uid: k, id: v[k].id, name: v[k].name, ts: v[k].ts }); });
+        S.reqs.sort(function (a, b) { return (a.ts || 0) - (b.ts || 0); });
+        renderReqBadge(); if (popOn() === 'vrManage') renderManage();
+      }, function () { });
+    } else if (!want && S.reqRef) { try { S.reqRef.off(); } catch (e) { } S.reqRef = null; S.reqs = []; renderReqBadge(); }
+  }
+  function exitRoom(silent) {
+    var rid = S.cur;
+    leaveVoice(false);
+    offAll(S.roomRefs);
+    if (S.reqRef) { try { S.reqRef.off(); } catch (e) { } S.reqRef = null; }
+    try { if (S.presRef) { S.presRef.remove(); S.presRef.onDisconnect().cancel(); } } catch (e) { }
+    stopTyping();
+    S.inRoom = false; S.cur = null; S.room = null; S.members = {}; S.voice = {}; S.pres = {};
+    if (!silent) { showScr('vrList'); renderRooms(); }
+    return rid;
+  }
+  function forceExit(msg) {
+    if (S.exiting) return; S.exiting = true;
+    exitRoom(false); toast(msg, 5000); S.exiting = false;
+  }
+
+  /* ------------------------------ ROOM RENDERING ------------------------------ */
+  function renderAll() { renderStat(); renderChips(); renderMenu(); renderReqBadge(); renderMembersIfOpen(); $('vrManageB').style.display = isMgr() ? 'block' : 'none'; }
+  function renderStat() {
+    if (!S.inRoom) return;
+    var n = keys(S.members).length || (S.room && S.room.count) || 0, v = keys(S.voice).length, parts = [];
+    parts.push(S.online ? 'Online' : 'Offline - reconnecting');
+    parts.push(keys(S.pres).length + ' online');
+    parts.push(n + ' member' + (n === 1 ? '' : 's'));
+    var vs = 'Voice off';
+    if (S.joining) vs = 'Connecting voice...';
+    else if (S.voiceOn) {
+      var ids = keys(S.peers), ok = 0, bad = 0; ids.forEach(function (u) { if (S.pstate[u] === 'connected') ok++; else if (S.pstate[u] === 'failed') bad++; });
+      vs = 'Voice: ' + (ids.length === 0 ? 'waiting for others' : ok === ids.length ? 'connected' : bad ? 'some failed' : 'connecting') + ' (' + v + ' in voice)';
+    }
+    parts.push(vs);
+    if (S.room && S.room.locked) parts.push('Locked');
+    $('vrStat').textContent = parts.join(' • ');
+    var jb = $('vrJoinV');
+    jb.textContent = S.voiceOn ? '📵 Leave Voice' : (S.joining ? 'Connecting...' : '🎤 Join Voice');
+    jb.className = 'vr-b vr-w ' + (S.voiceOn ? 'vr-red' : 'vr-green'); jb.disabled = !!S.joining;
+    var mid = $('vrBarMid'), songBy = null;
+    keys(S.voice).forEach(function (u) { if (S.voice[u] && S.voice[u].song) songBy = S.voice[u]; });
+    mid.textContent = songBy ? '♪ ' + cut(songBy.song, 22) : (S.voiceOn ? (S.micOn ? 'Mic on' : 'Mic off') : '');
+  }
+  function renderChips() {
+    var box = $('vrChips'); if (!box) return; clear(box);
+    var list = [], seenC = {};
+    sorted(S.voice, function (a, b) { return (a.v.ts || 0) - (b.v.ts || 0); }).forEach(function (it) { seenC[it.k] = 1; list.push({ k: it.k, v: it.v, vo: true }); });
+    keys(S.pres).forEach(function (u) { if (seenC[u] || !S.members[u]) return; seenC[u] = 1; list.push({ k: u, v: S.members[u], vo: false }); });
+    if (!list.length) { box.style.display = 'none'; return; }
+    box.style.display = 'flex';
+    list.forEach(function (it) {
+      var v = it.v, c = h('button', 'vr-chip' + (it.vo ? '' : ' ol') + (isSpeaking(it.k) ? ' sp' : '') + (S.lmute[it.k] ? ' lm' : ''));
+      c.type = 'button'; c.title = it.vo ? 'Tap to mute / unmute this person for you' : (v.name || v.id || '');
+      c.onclick = function () { if (it.vo) toggleLocalMute(it.k); else toast((v.name || v.id || 'Member') + ' is online'); };
+      c.appendChild(av(v.id, v.name, 26));
+      if (S.lmute[it.k]) c.appendChild(h('b', '', '\uD83D\uDD15'));
+      if (it.vo && v.mic === false) c.appendChild(h('i', '', '🔇'));
+      c.appendChild(h('div', '', it.vo && v.song ? '♪' + cut(v.name, 5) : cut(v.name || v.id, 6)));
+      box.appendChild(c);
+    });
+  }
+  function toggleLocalMute(u) {
+    if (u === S.uid) { toast('This is you. Use Mute in the menu.'); return; }
+    S.lmute[u] = !S.lmute[u]; if (!S.lmute[u]) delete S.lmute[u];
+    var a = S.audios[u]; if (a) { try { a.muted = !!S.lmute[u]; if (!S.lmute[u]) a.play(); } catch (e) { } }
+    toast(nameOf(u) + (S.lmute[u] ? ' is muted for you. Tap again to unmute.' : ' unmuted. You can hear them again.'), 2500);
+    renderChips(); if (popOn() === 'vrMembers') renderMembersPop();
+  }
+  function renderMenu() {
+    $('vrMMute').disabled = !S.voiceOn || !S.micOn;
+    $('vrMUnmute').disabled = S.micOn && S.voiceOn;
+    $('vrMStop').disabled = !S.song;
+  }
+  function renderReqBadge() {
+    var b = $('vrReqN'); b.textContent = String(S.reqs.length); b.style.display = S.reqs.length ? 'inline-block' : 'none';
+    var mb = $('vrMenuB'); if (mb) mb.className = 'vr-b' + (S.reqs.length ? ' vr-red' : '');
+  }
+  function memberRow(uid, m, opts) {
+    var row = h('div', 'vr-card'), top = h('div', 'vr-flex');
+    top.appendChild(av(m.id, m.name, 28));
+    var t = h('div', 'vr-grow'); t.style.marginLeft = '6px';
+    var role = m.role === 'owner' ? ' (owner)' : m.role === 'mod' ? ' (mod)' : '';
+    t.appendChild(h('div', 'vr-nm', (m.name || m.id) + role));
+    t.appendChild(h('div', 'vr-sub', '@' + (m.id || '')));
+    top.appendChild(t);
+    if (opts && opts.dot) { var d = h('span', 'vr-dot'); top.appendChild(d); }
+    row.appendChild(top);
+    return row;
+  }
+  function voiceLine(uid) {
+    var v = S.voice[uid]; if (!v) return 'Not in voice';
+    var p = [v.mic === false ? 'Mic off' : 'Mic on', isSpeaking(uid) ? 'Speaking' : 'Silent'];
+    if (uid === S.uid) p.push('You'); else p.push(({ connected: 'Connected', failed: 'Failed', connecting: 'Connecting' })[S.pstate[uid]] || 'Connecting');
+    if (S.lmute[uid]) p.push('Muted by you');
+    if (v.song) p.push('Song: ' + cut(v.song, 18));
+    return p.join(' • ');
+  }
+  function renderMembersIfOpen() { if (popOn() === 'vrMembers') renderMembersPop(); if (popOn() === 'vrSpeak') renderSpeakPop(); }
+  function renderMembersPop() {
+    var L = $('vrMembersL'), fo = document.activeElement && document.activeElement.id; clear(L);
+    var list = sorted(S.members, function (a, b) {
+      var w = { owner: 0, mod: 1, member: 2 }; var d = (w[a.v.role] || 2) - (w[b.v.role] || 2); return d || (a.v.ts || 0) - (b.v.ts || 0);
+    });
+    $('vrMembersT').textContent = 'Members (' + list.length + ')';
+    list.forEach(function (it) {
+      var m = it.v, row = memberRow(it.k, m, { dot: false });
+      row.appendChild(h('div', 'vr-sub', voiceLine(it.k)));
+      var canRemove = it.k !== S.uid && m.role !== 'owner' && (isOwner() || (myRole() === 'mod' && m.role === 'member'));
+      if (canRemove || (isOwner() && it.k !== S.uid && m.role !== 'owner')) {
+        var bx = h('div', 'vr-btns');
+        if (canRemove) {
+          var rb = h('button', 'vr-b vr-red', 'Remove'); rb.type = 'button'; bx.appendChild(rb);
+          rb.onclick = function () { confirmTap(rb, 'Remove', 'Sure?', function () { removeMember(it.k, m); }); };
+        }
+        if (isOwner() && m.role !== 'owner') {
+          var mb = h('button', 'vr-b', m.role === 'mod' ? 'Unmod' : 'Make mod'); mb.type = 'button'; bx.appendChild(mb);
+          mb.onclick = function () { S.rdb.ref('vmembers/' + S.cur + '/' + it.k + '/role').set(m.role === 'mod' ? 'member' : 'mod').then(null, fail); };
+        }
+        row.appendChild(bx);
+      }
+      L.appendChild(row);
+    });
+    $('vrLeaveRoom').style.display = isOwner() ? 'none' : 'block';
+    if (fo && $(fo)) try { $(fo).focus(); } catch (e) { }
+  }
+  function renderSpeakPop() {
+    var L = $('vrSpeakL'); clear(L); var n = 0;
+    keys(S.voice).forEach(function (u) {
+      if (!isSpeaking(u)) return; n++;
+      var v = S.voice[u], row = h('div', 'vr-card vr-flex');
+      row.appendChild(av(v.id, v.name, 26));
+      var t = h('div', 'vr-grow'); t.style.marginLeft = '6px';
+      t.appendChild(h('div', 'vr-nm', v.name)); t.appendChild(h('div', 'vr-sub', '@' + v.id));
+      row.appendChild(t); row.appendChild(h('span', 'vr-dot'));
+      L.appendChild(row);
+    });
+    if (!n) L.appendChild(h('div', 'vr-msg', 'Nobody is speaking right now.'));
+  }
+  function renderSongPop() {
+    var L = $('vrSongL'); clear(L);
+    L.appendChild(h('div', 'vr-msg', S.song ? 'Now playing (you): ' + S.song.name : 'You are not playing a song.'));
+    keys(S.voice).forEach(function (u) { var v = S.voice[u]; if (u !== S.uid && v && v.song) L.appendChild(h('div', 'vr-msg', '♪ ' + v.name + ': ' + v.song)); });
+    $('vrSongStop').disabled = !S.song;
+  }
+  function confirmTap(btn, label, ask, fn) {
+    if (btn._c) { clearTimeout(btn._t); btn._c = 0; btn.textContent = label; fn(); return; }
+    btn._c = 1; btn.textContent = ask; btn._t = setTimeout(function () { btn._c = 0; btn.textContent = label; }, 3500);
+  }
+  function speakChanged() { renderChips(); if (popOn() === 'vrSpeak') renderSpeakPop(); if (popOn() === 'vrMembers') renderMembersPop(); }
+  function isSpeaking(u) {
+    if (!S.speaking[u]) return false;
+    if (u === S.uid) return S.micOn;
+    var v = S.voice[u]; return !!(v && v.mic !== false);
+  }
+
+  /* ------------------------------ MANAGE (owner / moderator) ------------------------------ */
+  function renderManage() {
+    var L = $('vrReqL'); clear(L);
+    if (!S.reqs.length) L.appendChild(h('div', 'vr-msg', 'No pending requests.'));
+    S.reqs.forEach(function (r) {
+      var row = h('div', 'vr-card'), top = h('div', 'vr-flex');
+      top.appendChild(av(r.id, r.name, 28));
+      var t = h('div', 'vr-grow'); t.style.marginLeft = '6px';
+      t.appendChild(h('div', 'vr-nm', r.name || r.id)); t.appendChild(h('div', 'vr-sub', 'ID: ' + (r.id || '')));
+      top.appendChild(t); row.appendChild(top);
+      var bx = h('div', 'vr-btns'), a = h('button', 'vr-b vr-green', 'ACCEPT'), x = h('button', 'vr-b vr-red', 'REJECT');
+      a.type = 'button'; x.type = 'button'; bx.appendChild(a); bx.appendChild(x); row.appendChild(bx);
+      a.onclick = function () { acceptReq(r); }; x.onclick = function () { rejectReq(r); };
+      L.appendChild(row);
+    });
+    $('vrOwnerBox').style.display = isOwner() ? 'block' : 'none';
+    $('vrLockB').textContent = S.room && S.room.locked ? 'Unlock room' : 'Lock room';
+    $('vrCodeShow').value = S.cur || '';
+  }
+  function sysMsg(text) {
+    S.rdb.ref('vmsgs/' + S.cur).push({ uid: S.uid, id: S.me, name: S.myName, text: cut(text, 120), ts: S.TS, sys: true }).then(null, function () { });
+  }
+  function bump(d) {
+    S.rdb.ref('vrooms/' + S.cur + '/count').transaction(function (c) { return Math.max(0, (c || 0) + d); }, function () { }, false);
+  }
+  function acceptReq(r) {
+    if (S.room && S.room.locked) { toast('Room is locked. Unlock it to accept new members.'); return; }
+    var up = {};
+    up['vmembers/' + S.cur + '/' + r.uid] = { id: r.id, name: cut(r.name || r.id, 30), role: 'member', ts: S.TS };
+    up['vreq/' + S.cur + '/' + r.uid + '/status'] = 'accepted';
+    S.rdb.ref().update(up).then(function () { bump(1); sysMsg((r.name || r.id) + ' joined the room.'); toast((r.name || r.id) + ' accepted.'); }, fail);
+  }
+  function rejectReq(r) {
+    S.rdb.ref('vreq/' + S.cur + '/' + r.uid + '/status').set('rejected').then(function () { toast('Request rejected.'); }, fail);
+  }
+  function removeMember(uid, m) {
+    var up = {}, rid = S.cur;
+    up['vmembers/' + rid + '/' + uid] = null; up['vvoice/' + rid + '/' + uid] = null;
+    up['vreq/' + rid + '/' + uid] = null; up['vsig/' + rid + '/' + uid] = null;
+    S.rdb.ref().update(up).then(function () { bump(-1); sysMsg((m.name || m.id) + ' was removed from the room.'); toast((m.name || m.id) + ' was removed.'); }, fail);
+  }
+  function leaveRoomForever() {
+    var rid = S.cur; if (!rid || isOwner()) return;
+    var ref = S.rdb.ref('vrooms/' + rid + '/count');
+    ref.transaction(function (c) { return Math.max(0, (c || 0) - 1); }, function () { }, false);
+    setTimeout(function () {
+      var up = {}; up['vmembers/' + rid + '/' + S.uid] = null; up['vvoice/' + rid + '/' + S.uid] = null; up['vreq/' + rid + '/' + S.uid] = null;
+      leaveVoice(false);
+      S.rdb.ref().update(up).then(function () { var l = myRooms().filter(function (x) { return x !== rid; }); lsSet('vr_my', JSON.stringify(l)); exitRoom(false); toast('You left the room.'); }, fail);
+    }, 250);
+  }
+  function closeRoom() {
+    var rid = S.cur, up = {};
+    ['vrooms', 'vmembers', 'vreq', 'vmsgs', 'vvoice', 'vsig', 'vtyping', 'vpresence'].forEach(function (p) { up[p + '/' + rid] = null; });
+    S.rdb.ref().update(up).then(function () { var l = myRooms().filter(function (x) { return x !== rid; }); lsSet('vr_my', JSON.stringify(l)); }, fail);
+  }
+
+  /* ------------------------------ CHAT ------------------------------ */
+  function addMsg(m, key) {
+    if (!m) return;
+    if (key) { S.msgKeys.push(key); if (S.msgKeys.length > 150) S.msgKeys.shift(); } var box = $('vrChat'), near = box.scrollHeight - box.scrollTop - box.clientHeight < 40;
+    if (m.sys) { box.appendChild(h('div', 'vr-sys', m.text)); }
+    else {
+      var row = h('div', 'vr-m' + (m.uid === S.uid ? ' me' : '')), b = h('div', 'b'), hd = h('div', 'h', m.name || m.id);
+      hd.appendChild(h('span', '', fmtTime(m.ts)));
+      b.appendChild(hd);
+      var xb = h('div', 'x');
+      if (m.img && /^data:image\/(jpeg|png|webp|gif);base64,/.test(String(m.img))) {
+        var im = document.createElement('img'); im.src = m.img; im.alt = 'Photo';
+        im.onclick = function () { im.className = im.className ? '' : 'big'; };
+        xb.appendChild(im);
+      } else xb.textContent = m.text;
+      b.appendChild(xb);
+      row.appendChild(av(m.id, m.name, 22)); row.appendChild(b); box.appendChild(row);
+    }
+    while (box.childNodes.length > 50) box.removeChild(box.firstChild);
+    if (near || m.uid === S.uid) box.scrollTop = box.scrollHeight;
+  }
+  function sendMsg() {
+    var inp = $('vrMsg'), t = inp.value.replace(/^\s+|\s+$/g, '');
+    if (!t || !S.cur) return;
+    inp.value = ''; stopTyping();
+    S.rdb.ref('vmsgs/' + S.cur).push({ uid: S.uid, id: S.me, name: S.myName, text: cut(t, 300), ts: S.TS }).then(function () { trimMsgs(); }, fail);
+  }
+  function pickImage() {
+    var f = $('vrImgFile'); f.value = '';
+    f.onchange = function () { var file = f.files && f.files[0]; if (file) sendImage(file); };
+    try { f.click(); } catch (e) { toast('This browser cannot open the file picker.'); }
+  }
+  function sendImage(file) {
+    if (!file || !S.cur) return;
+    if (!/^image\//.test(file.type || '')) { toast('Please choose an image.'); return; }
+    toast('Sending image...', 2000);
+    var rd = new FileReader(), rid = S.cur;
+    rd.onerror = function () { toast('Could not read this image.'); };
+    rd.onload = function () {
+      var im = new Image();
+      im.onerror = function () { toast('Could not open this image.'); };
+      im.onload = function () {
+        try {
+          var w = im.width || 1, hh = im.height || 1, sc = Math.min(1, 220 / Math.max(w, hh));
+          var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(hh * sc));
+          var cv = document.createElement('canvas'); cv.width = cw; cv.height = ch;
+          cv.getContext('2d').drawImage(im, 0, 0, cw, ch);
+          var url = cv.toDataURL('image/jpeg', 0.55);
+          if (url.length > 60000) url = cv.toDataURL('image/jpeg', 0.35);
+          if (url.length > 90000) { toast('Image is too big.'); return; }
+          if (S.cur !== rid) return;
+          S.rdb.ref('vmsgs/' + rid).push({ uid: S.uid, id: S.me, name: S.myName, text: 'Photo', img: url, ts: S.TS }).then(function () { trimMsgs(); }, fail);
+        } catch (e) { toast('Could not send this image.'); }
+      };
+      im.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  }
+  /* keep only the newest 50 messages: older ones are deleted from the database too */
+  function trimMsgs() {
+    var rid = S.cur, ks = S.msgKeys; if (!rid || !S.rdb || ks.length < 50) return;
+    var oldest = ks[ks.length - 50];
+    S.rdb.ref('vmsgs/' + rid).orderByKey().endAt(oldest).limitToLast(26).once('value').then(function (s) {
+      var up = {}, n = 0;
+      s.forEach(function (c) { if (c.key !== oldest) { up['vmsgs/' + rid + '/' + c.key] = null; n++; } });
+      if (n && S.cur === rid) return S.rdb.ref().update(up);
+    }).then(null, function () { });
+  }
+  function renderTyping() {
+    var n = []; keys(S.typing).forEach(function (u) { if (u !== S.uid && S.typing[u]) n.push(cut(S.typing[u], 12)); });
+    $('vrTyping').textContent = n.length ? (n.slice(0, 2).join(', ') + (n.length > 2 ? ' +' + (n.length - 2) : '') + (n.length === 1 ? ' is typing...' : ' are typing...')) : '';
+  }
+  function onTyping() {
+    if (!S.cur || !S.inRoom) return;
+    var now = Date.now();
+    if (now - S.typLast > 2500) {
+      S.typLast = now; var r = S.rdb.ref('vtyping/' + S.cur + '/' + S.uid);
+      r.set(cut(S.myName, 30)).then(null, function () { }); try { r.onDisconnect().remove(); } catch (e) { }
+    }
+    clearTimeout(S.typT); S.typT = setTimeout(stopTyping, 3000);
+  }
+  function stopTyping() {
+    clearTimeout(S.typT); S.typLast = 0;
+    if (S.cur && S.rdb) { try { S.rdb.ref('vtyping/' + S.cur + '/' + S.uid).remove().then(null, function () { }); } catch (e) { } }
+  }
+
+  /* ------------------------------ VOICE: audio graph ------------------------------ */
+  function actx() {
+    if (!S.ac) S.ac = new ACtx();
+    if (S.ac.state === 'suspended' && S.ac.resume) { try { S.ac.resume(); } catch (e) { } }
+    return S.ac;
+  }
+  function watch(key, src) {
+    try {
+      var a = S.ac.createAnalyser(); a.fftSize = 256; src.connect(a);
+      S.an[key] = { a: a, src: src, buf: new Uint8Array(a.fftSize), last: 0 };
+    } catch (e) { }
+  }
+  function unwatch(key) {
+    var o = S.an[key]; if (o) { try { o.src.disconnect(o.a); } catch (e) { } }
+    delete S.an[key]; if (S.speaking[key]) { delete S.speaking[key]; speakChanged(); }
+  }
+  function tick() {
+    var ch = false, now = Date.now();
+    keys(S.an).forEach(function (k) {
+      var o = S.an[k], on = false;
+      try {
+        o.a.getByteTimeDomainData(o.buf); var s = 0;
+        for (var i = 0; i < o.buf.length; i++) { var d = o.buf[i] - 128; s += d * d; }
+        if (Math.sqrt(s / o.buf.length) > SPEAK_RMS) o.last = now;
+        on = now - o.last < 350;
+      } catch (e) { }
+      if (!!S.speaking[k] !== on) { if (on) S.speaking[k] = 1; else delete S.speaking[k]; ch = true; }
+    });
+    if (ch) speakChanged();
+  }
+
+  /* ------------------------------ VOICE: join / leave ------------------------------ */
+  function joinVoice(done) {
+    var cm = compat(); if (cm.length) { $('vrCompat').style.display = 'block'; $('vrCompat').textContent = compatMsg(cm); toast(compatMsg(cm), 6000); if (done) done(false); return; }
+    if (S.voiceOn) { if (done) done(true); return; }
+    if (S.joining) return;
+    S.joining = true; renderStat();
+    var rid = S.cur, rdb = S.rdb;
+    try { actx(); S.dest = S.ac.createMediaStreamDestination(); S.out = S.dest.stream; } catch (e) { S.joining = false; renderStat(); toast('Audio engine error: ' + errText(e), 5000); if (done) done(false); return; }
+    rdb.ref('vvoice/' + rid).once('value').then(function (s) {
+      var n = 0; s.forEach(function (c) { if (c.key !== S.uid) n++; });
+      if (n >= MAX_VOICE - 1) throw { message: 'Voice is full (' + MAX_VOICE + ' people max).' };
+      return getMic().then(function (stream) { attachMic(stream, true); }, function (e) {
+        S.micOn = false; S.micErr = errText(e);
+        toast('Microphone not available: ' + S.micErr + ' You can still listen and chat.', 6000);
+      });
+    }).then(function () {
+      return rdb.ref('vsig/' + rid + '/' + S.uid).remove();
+    }).then(function () {
+      S.sigRef = rdb.ref('vsig/' + rid + '/' + S.uid);
+      S.sigRef.on('child_added', onSig, function () { });
+      S.vref = rdb.ref('vvoice/' + rid + '/' + S.uid);
+      try { S.vref.onDisconnect().remove(); } catch (e) { }
+      return S.vref.set({ id: S.me, name: S.myName, mic: !!S.micOn, ts: S.TS });
+    }).then(function () {
+      S.voiceOn = true; S.joining = false;
+      if (!S.tickT) S.tickT = setInterval(tick, 250);
+      syncPeers(); renderStat(); renderMenu(); renderChips();
+      if (done) done(true);
+    }, function (e) {
+      S.joining = false; leaveVoice(true); toast(errText(e), 5000); renderStat(); if (done) done(false);
+    });
+  }
+  function attachMic(stream, muted) {
+    S.micStream = stream; S.micSrc = S.ac.createMediaStreamSource(stream);
+    S.micGain = S.ac.createGain(); S.micSrc.connect(S.micGain); S.micGain.connect(S.dest);
+    S.micOn = !muted;
+    if (muted) {
+      try { stream.getAudioTracks().forEach(function (t) { t.enabled = false; }); } catch (e) { }
+      try { S.micGain.gain.value = 0; } catch (e) { }
+    }
+    unwatch(S.uid); watch(S.uid, S.micSrc);
+  }
+  function setMic(on) {
+    if (on && !S.voiceOn) { joinVoice(function (ok) { if (!ok) return; if (!S.micStream) askMic(); else applyMic(true); }); return; }
+    if (on && !S.micStream) { askMic(); return; }
+    if (!S.voiceOn) { toast('Join voice first.'); return; }
+    applyMic(on);
+  }
+  function askMic() {
+    getMic().then(function (stream) { attachMic(stream); applyMic(true); }, function (e) { toast('Microphone permission denied. ' + errText(e), 5000); });
+  }
+  function applyMic(on) {
+    S.micOn = !!on;
+    if (S.micStream) { try { S.micStream.getAudioTracks().forEach(function (t) { t.enabled = !!on; }); } catch (e) { } }
+    if (S.micGain) { try { S.micGain.gain.value = on ? 1 : 0; } catch (e) { } }
+    if (S.vref) S.vref.update({ mic: !!on }).then(null, function () { });
+    if (!on) { delete S.speaking[S.uid]; }
+    renderStat(); renderMenu(); renderChips(); speakChanged();
+  }
+  function leaveVoice(quiet) {
+    var was = S.voiceOn || S.joining || S.micStream;
+    S.voiceOn = false; S.joining = false;
+    keys(S.peers).forEach(closePeer);
+    stopSong(true);
+    if (S.sigRef) { try { S.sigRef.off(); } catch (e) { } S.sigRef = null; }
+    if (S.vref) { try { S.vref.onDisconnect().cancel(); S.vref.remove().then(null, function () { }); } catch (e) { } S.vref = null; }
+    if (S.micStream) { try { S.micStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { } }
+    unwatch(S.uid);
+    try { if (S.micSrc) S.micSrc.disconnect(); if (S.micGain) S.micGain.disconnect(); } catch (e) { }
+    S.micStream = null; S.micSrc = null; S.micGain = null; S.micOn = false; S.dest = null; S.out = null;
+    if (S.tickT) { clearInterval(S.tickT); S.tickT = 0; }
+    S.pstate = {}; S.retry = {}; S.speaking = {};
+    if (was && !quiet && S.inRoom) { renderStat(); renderMenu(); renderChips(); }
+  }
+
+  /* ------------------------------ VOICE: peers (WebRTC) ------------------------------ */
+  function iceServers() { return STUN.concat(TURN); }
+  function sendSig(to, obj) {
+    obj.from = S.uid;
+    S.rdb.ref('vsig/' + S.cur + '/' + to).push(obj).then(null, function () { });
+  }
+  function syncPeers() {
+    if (!S.voiceOn) return;
+    keys(S.voice).forEach(function (u) {
+      if (u === S.uid) return; S.seen[u] = true;
+      if (!S.peers[u] && S.uid < u) startPeer(u, true, null);
+    });
+    keys(S.peers).forEach(function (u) { if (!S.voice[u] && S.seen[u]) { closePeer(u); delete S.seen[u]; } });
+  }
+  function startPeer(u, init, sid) {
+    closePeer(u);
+    var p = { pc: null, sid: sid || (Math.random().toString(36).substr(2, 8)), queue: [], remote: false, init: init, stream: null, failT: 0 };
+    S.peers[u] = p; S.pstate[u] = 'connecting';
+    try { p.pc = new RTC({ iceServers: iceServers() }); } catch (e) { S.pstate[u] = 'failed'; renderStat(); return null; }
+    var pc = p.pc;
+    try {
+      if (pc.addTrack) S.out.getTracks().forEach(function (t) { pc.addTrack(t, S.out); });
+      else if (pc.addStream) pc.addStream(S.out);
+    } catch (e) { try { if (pc.addStream) pc.addStream(S.out); } catch (x) { } }
+    pc.onicecandidate = function (e) {
+      if (e.candidate && S.peers[u] === p) sendSig(u, { t: 'ice', s: p.sid, d: JSON.stringify({ candidate: e.candidate.candidate, sdpMid: e.candidate.sdpMid, sdpMLineIndex: e.candidate.sdpMLineIndex }) });
+    };
+    pc.ontrack = function (e) { if (e.streams && e.streams[0]) gotRemote(u, p, e.streams[0]); else if (e.track) { var ms = new MediaStream(); ms.addTrack(e.track); gotRemote(u, p, ms); } };
+    pc.onaddstream = function (e) { gotRemote(u, p, e.stream); };
+    pc.oniceconnectionstatechange = function () {
+      if (S.peers[u] !== p) return;
+      var st = pc.iceConnectionState;
+      if (st === 'connected' || st === 'completed') { clearTimeout(p.failT); S.pstate[u] = 'connected'; S.retry[u] = 0; }
+      else if (st === 'failed' || st === 'closed') { S.pstate[u] = 'failed'; peerFailed(u, p); }
+      else if (st === 'disconnected') { S.pstate[u] = 'connecting'; clearTimeout(p.failT); p.failT = setTimeout(function () { if (S.peers[u] === p && pc.iceConnectionState !== 'connected' && pc.iceConnectionState !== 'completed') { S.pstate[u] = 'failed'; peerFailed(u, p); } }, 7000); }
+      else S.pstate[u] = 'connecting';
+      renderStat(); if (popOn() === 'vrMembers') renderMembersPop();
+    };
+    if (init) {
+      pc.createOffer({ offerToReceiveAudio: true }).then(function (o) {
+        return pc.setLocalDescription(o).then(function () { sendSig(u, { t: 'offer', s: p.sid, d: JSON.stringify({ type: o.type, sdp: o.sdp }) }); });
+      }).then(null, function () { S.pstate[u] = 'failed'; renderStat(); });
+    }
+    return p;
+  }
+  function gotRemote(u, p, stream) {
+    if (S.peers[u] !== p || p.stream === stream) return;
+    p.stream = stream;
+    var a = S.audios[u]; if (!a) { a = new Audio(); a.autoplay = true; S.audios[u] = a; }
+    a.muted = !!S.lmute[u];
+    try { if ('srcObject' in a) a.srcObject = stream; else if ('mozSrcObject' in a) a.mozSrcObject = stream; else a.src = (g.URL || g.webkitURL).createObjectURL(stream); } catch (e) { }
+    var pr; try { pr = a.play(); } catch (e) { }
+    if (pr && pr.then) pr.then(null, function () { toast('Tap the screen or press OK to enable sound.', 5000); });
+    try { unwatch(u); var src = S.ac.createMediaStreamSource(stream); watch(u, src); } catch (e) { }
+  }
+  function closePeer(u) {
+    var p = S.peers[u]; if (!p) return;
+    delete S.peers[u]; clearTimeout(p.failT);
+    try { p.pc.onicecandidate = null; p.pc.ontrack = null; p.pc.onaddstream = null; p.pc.oniceconnectionstatechange = null; p.pc.close(); } catch (e) { }
+    var a = S.audios[u]; if (a) { try { a.pause(); if ('srcObject' in a) a.srcObject = null; else a.removeAttribute('src'); } catch (e) { } delete S.audios[u]; }
+    unwatch(u); delete S.pstate[u];
+  }
+  function peerFailed(u, p) {
+    if (!S.voiceOn || S.peers[u] !== p) return;
+    S.retry[u] = (S.retry[u] || 0) + 1;
+    if (S.retry[u] > 3) { toast('Cannot connect voice with ' + nameOf(u) + '. A TURN server may be needed on this network.', 6000); return; }
+    setTimeout(function () {
+      if (!S.voiceOn || S.peers[u] !== p || !S.voice[u]) return;
+      if (S.uid < u) startPeer(u, true, null); else { closePeer(u); sendSig(u, { t: 'retry', s: '0', d: '{}' }); }
+    }, 1500);
+  }
+  function nameOf(u) { var v = S.voice[u] || S.members[u]; return v ? (v.name || v.id) : 'a member'; }
+  function applyDesc(p, desc, then) {
+    var d; try { d = SDesc ? new SDesc(desc) : desc; } catch (e) { d = desc; }
+    return p.pc.setRemoteDescription(d).then(function () {
+      p.remote = true; var q = p.queue; p.queue = []; q.forEach(function (c) { addIce(p, c); }); if (then) return then();
+    });
+  }
+  function addIce(p, c) { try { p.pc.addIceCandidate(ICand ? new ICand(c) : c).then(null, function () { }); } catch (e) { } }
+  function onSig(snap) {
+    var m = snap.val(); try { snap.ref.remove(); } catch (e) { }
+    if (!m || !S.voiceOn || !m.from || m.from === S.uid) return;
+    var u = m.from, p = S.peers[u], d = null;
+    try { d = JSON.parse(m.d || '{}'); } catch (e) { return; }
+    if (m.t === 'offer') {
+      if (!S.voice[u] && !S.members[u]) return;
+      p = startPeer(u, false, m.s); if (!p) return;
+      applyDesc(p, d, function () {
+        return p.pc.createAnswer().then(function (a) { return p.pc.setLocalDescription(a).then(function () { sendSig(u, { t: 'answer', s: p.sid, d: JSON.stringify({ type: a.type, sdp: a.sdp }) }); }); });
+      }).then(null, function () { S.pstate[u] = 'failed'; renderStat(); });
+    } else if (m.t === 'answer') {
+      if (p && p.sid === m.s && !p.remote) applyDesc(p, d).then(null, function () { S.pstate[u] = 'failed'; renderStat(); });
+    } else if (m.t === 'ice') {
+      if (p && p.sid === m.s) { if (p.remote) addIce(p, d); else p.queue.push(d); }
+    } else if (m.t === 'retry') {
+      if (S.uid < u && S.voice[u]) startPeer(u, true, null);
+    }
+  }
+
+  /* ------------------------------ AUDIO SONG ------------------------------ */
+  function pickSong() {
+    var f = $('vrFile'); f.value = '';
+    f.onchange = function () { var file = f.files && f.files[0]; if (file) playSong(file); };
+    try { f.click(); } catch (e) { toast('This browser cannot open the file picker.'); }
+  }
+  function playSong(file) {
+    joinVoice(function (ok) {
+      if (!ok) return;
+      try {
+        var ac = actx();
+        if (!S.songEl) {
+          S.songEl = new Audio();
+          S.songEl.onended = function () { stopSong(false); };
+          S.songSrc = ac.createMediaElementSource(S.songEl);
+          S.songGain = ac.createGain(); S.songSrc.connect(S.songGain);
+          S.songGain.connect(S.dest); S.songGain.connect(ac.destination);
+        } else { try { S.songGain.disconnect(); S.songGain.connect(S.dest); S.songGain.connect(ac.destination); } catch (e) { } }
+      } catch (e) { toast('This browser cannot share audio files.', 5000); S.songEl = null; return; }
+      if (S.songUrl) { try { (g.URL || g.webkitURL).revokeObjectURL(S.songUrl); } catch (e) { } }
+      S.songUrl = (g.URL || g.webkitURL).createObjectURL(file);
+      S.songEl.src = S.songUrl;
+      var pr; try { pr = S.songEl.play(); } catch (e) { }
+      var started = function () {
+        S.song = { name: cut(file.name, 60) };
+        if (S.vref) S.vref.update({ song: S.song.name }).then(null, function () { });
+        renderMenu(); renderStat(); openPop('vrSong');
+      };
+      if (pr && pr.then) pr.then(started, function (e) { toast('Could not play this file: ' + errText(e), 5000); }); else started();
+    });
+  }
+  function stopSong(quiet) {
+    if (S.songEl) { try { S.songEl.pause(); S.songEl.currentTime = 0; } catch (e) { } }
+    if (S.songUrl) { try { (g.URL || g.webkitURL).revokeObjectURL(S.songUrl); } catch (e) { } S.songUrl = null; }
+    var had = !!S.song; S.song = null;
+    if (had && S.vref && S.voiceOn) S.vref.update({ song: null }).then(null, function () { });
+    if (!quiet) { renderMenu(); renderStat(); if (popOn() === 'vrSong') renderSongPop(); }
+  }
+
+  /* ------------------------------ KEYS (touch + D-pad + KaiOS soft keys) ------------------------------ */
+  var KC = { 13: 'Enter', 27: 'Escape', 8: 'Backspace', 37: 'ArrowLeft', 38: 'ArrowUp', 39: 'ArrowRight', 40: 'ArrowDown', 112: 'SoftLeft', 113: 'SoftRight' };
+  function keyName(e) { var k = e.key; if (!k || k === 'Unidentified') k = KC[e.keyCode] || ''; if (k === 'Up') k = 'ArrowUp'; if (k === 'Down') k = 'ArrowDown'; if (k === 'Left') k = 'ArrowLeft'; if (k === 'Right') k = 'ArrowRight'; return k; }
+  function onKey(e) {
+    if (!S.open) return;
+    var k = keyName(e), ae = document.activeElement, typing = ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA') && ae.type !== 'file';
+    e.stopPropagation();   /* keep the old inbox key handlers away while Voice Rooms is open */
+    if (k === 'ArrowUp' || k === 'ArrowDown') { e.preventDefault(); move(k === 'ArrowDown' ? 1 : -1); return; }
+    if ((k === 'ArrowLeft' || k === 'ArrowRight') && !typing && ae && ae.tagName === 'BUTTON') { e.preventDefault(); move(k === 'ArrowRight' ? 1 : -1); return; }
+    if (k === 'Enter') {
+      if (typing) {
+        e.preventDefault();
+        if (ae.id === 'vrMsg') sendMsg(); else if (ae.id === 'vrCodeIn') openRoom($('vrCodeIn').value); else if (ae.id === 'vrName') $('vrDesc').focus(); else if (ae.id === 'vrDesc') createRoom();
+        return;
+      }
+      if (ae && ae.tagName === 'BUTTON') { e.preventDefault(); ae.click(); }
+      return;
+    }
+    if (k === 'Escape' || (k === 'Backspace' && (!typing || !ae.value))) { e.preventDefault(); back(); return; }
+    if (k === 'SoftLeft') { e.preventDefault(); if (S.scr === 'vrRoom') { if (popOn() === 'vrMenu') closePops(); else openPop('vrMenu'); } else back(); return; }
+    if (k === 'SoftRight') { e.preventDefault(); if (S.scr === 'vrRoom') { if (popOn() === 'vrSpeak') closePops(); else openPop('vrSpeak'); } else back(); return; }
+  }
+
+  /* ------------------------------ INIT ------------------------------ */
+  function bind() {
+    function click(id, fn) { $(id).onclick = fn; }
+    click('vrListBack', closeVR); click('vrCreateBtn', openCreate); click('vrCodeGo', function () { openRoom($('vrCodeIn').value); });
+    click('vrPubB', function () { setPriv('public'); }); click('vrPrivB', function () { setPriv('private'); });
+    click('vrCreateGo', createRoom); click('vrCreateCancel', function () { showScr('vrList'); });
+    click('vrInfoBack', leaveInfo); click('vrRoomBack', function () { exitRoom(false); });
+    click('vrSend', sendMsg);
+    click('vrJoinV', function () { if (S.voiceOn) leaveVoice(false); else joinVoice(); });
+    click('vrMenuB', function () { openPop('vrMenu'); }); click('vrMSpeak', function () { openPop('vrSpeak'); });
+    click('vrMImg', function () { closePops(); pickImage(); });
+    click('vrMMute', function () { closePops(); setMic(false); });
+    click('vrMUnmute', function () { closePops(); setMic(true); });
+    click('vrMMembers', function () { openPop('vrMembers'); });
+    click('vrMSong', function () { closePops(); pickSong(); });
+    click('vrMStop', function () { closePops(); stopSong(false); });
+    click('vrMClose', function () { closePops(); focusFirst(); });
+    click('vrMembersClose', function () { closePops(); focusFirst(); }); click('vrSpeakClose', function () { closePops(); focusFirst(); });
+    click('vrSongClose', function () { closePops(); focusFirst(); });
+    click('vrSongPick', pickSong); click('vrSongStop', function () { stopSong(false); });
+    click('vrManageB', function () { openPop('vrManage'); }); click('vrManageClose', function () { closePops(); focusFirst(); });
+    click('vrLeaveRoom', function () { var b = $('vrLeaveRoom'); confirmTap(b, 'Leave this room', 'Tap again to leave', function () { closePops(); leaveRoomForever(); }); });
+    click('vrLockB', function () {
+      var lk = !(S.room && S.room.locked);
+      S.rdb.ref('vrooms/' + S.cur + '/locked').set(lk).then(function () { sysMsg(lk ? 'Room locked. New members cannot join.' : 'Room unlocked.'); }, fail);
+    });
+    click('vrCloseRoomB', function () { var b = $('vrCloseRoomB'); confirmTap(b, 'Close room', 'Tap again to close', closeRoom); });
+    $('vrMsg').oninput = onTyping;
+    document.addEventListener('click', function () { keys(S.audios).forEach(function (u) { try { if (S.audios[u].paused) S.audios[u].play(); } catch (e) { } }); if (S.ac && S.ac.state === 'suspended') { try { S.ac.resume(); } catch (e) { } } }, true);
+    g.addEventListener('keydown', onKey, true);
+    g.addEventListener('beforeunload', function () { try { if (S.vref) S.vref.remove(); if (S.presRef) S.presRef.remove(); } catch (e) { } });
+  }
+  function init() {
+    var st = document.createElement('style'); st.type = 'text/css'; st.appendChild(document.createTextNode(CSS)); document.getElementsByTagName('head')[0].appendChild(st);
+    var root = document.createElement('div'); root.id = 'vrRoot'; root.innerHTML = HTML; document.body.appendChild(root);
+    bind();
+    var sb = $('searchInbox');
+    if (sb) {
+      var box = sb.parentNode, w = h('div', 'vr-open-w'), b = h('button', 'vr-open', '🎙️ Voice Rooms');
+      b.type = 'button'; b.id = 'vrOpenBtn'; b.setAttribute('tabindex', '0'); b.onclick = openVR; w.appendChild(b);
+      if (box.nextSibling) box.parentNode.insertBefore(w, box.nextSibling); else box.parentNode.appendChild(w);
+    }
+    g.NexaVoiceRooms = { open: openVR, close: closeVR };
+  }
+  try {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+  } catch (e) { try { console.error('Voice Rooms failed to start', e); } catch (x) { } }
+})();
+
+</script>
+</body>
+</html>
+
+
+  
+
+  
