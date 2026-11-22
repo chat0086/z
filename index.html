@@ -3870,3 +3870,439 @@ e.preventDefault();e.stopImmediatePropagation();open(u);
 }catch(err){try{console.warn('profile addon',err)}catch(x){}}
 })();
 </script>
+
+<script>
+/* ===== Presence (Realtime Database) + Favourite person alert. ES5, KaiOS ready. Firestore is NOT used here. ===== */
+(function(){
+var g=window;
+try{
+var DB_URL='https://nexa-62813-default-rtdb.firebaseio.com';
+var SDK=['https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js','https://cdn.jsdelivr.net/npm/firebase@8.10.1/firebase-database.js','https://cdnjs.cloudflare.com/ajax/libs/firebase/8.10.1/firebase-database.js'];
+var HB=2000,STALE=6000,TICK=1000;
+var P={},eff={},off=0,rdb=null,myRef=null,connRef=null,offRef=null,listRef=null,TSV=null;
+var me='',started='',loading=false,connected=false,loggedOut=false,timers=[],hbT=0,tickT=0,sdkFail=0;
+var api=g.__nxPres={ready:false,expected:false};
+
+function srv(){return Date.now()+off}
+function calc(id){var r=P[id];if(!r)return null;return r.online===true&&(srv()-(r.ts||0))<STALE}
+api.on=function(id){return calc(String(id||'').toLowerCase())};
+api.ts=function(id){var r=P[String(id||'').toLowerCase()];return r&&r.ts?r.ts-off:0};
+function fire(){try{if(g.__nxPresChanged)g.__nxPresChanged()}catch(e){}}
+function visible(){try{return document.visibilityState!=='hidden'&&!document.hidden}catch(e){return true}}
+function loadSdk(i,cb){
+if(g.firebase&&g.firebase.database){cb(true);return}
+if(i>=SDK.length){cb(false);return}
+var s=document.createElement('script');
+s.src=SDK[i];
+s.onload=function(){if(g.firebase&&g.firebase.database)cb(true);else loadSdk(i+1,cb)};
+s.onerror=function(){loadSdk(i+1,cb)};
+document.getElementsByTagName('head')[0].appendChild(s);
+}
+function put(on){
+if(!myRef||!me)return;
+try{myRef.set({id:me,online:!!on,ts:TSV}).then(null,function(){})}catch(e){}
+}
+function recalcAll(){
+var ch=false,k,v;
+for(k in P){v=calc(k);if(eff[k]!==v){eff[k]=v;ch=true}}
+if(ch)fire();
+}
+function onRec(snap){
+var v=snap.val();
+if(!v||!v.id)return;
+var id=String(v.id).toLowerCase();
+P[id]=v;
+var c=calc(id);
+if(eff[id]!==c){eff[id]=c;if(api.ready)fire()}
+}
+function onGone(snap){
+var v=snap.val();if(!v||!v.id)return;
+var id=String(v.id).toLowerCase();delete P[id];delete eff[id];if(api.ready)fire();
+}
+function detach(){
+try{if(listRef){listRef.off();listRef=null}}catch(e){}
+try{if(connRef){connRef.off();connRef=null}}catch(e){}
+try{if(offRef){offRef.off();offRef=null}}catch(e){}
+clearInterval(hbT);clearInterval(tickT);hbT=0;tickT=0;
+}
+function begin(name,uid){
+if(loading)return;
+loading=true;api.expected=true;
+loadSdk(0,function(ok){
+loading=false;
+if(!ok){sdkFail++;api.expected=false;return}
+try{
+var cu=g.firebase.auth().currentUser;
+if(!cu||cu.uid!==uid||!g.__nx||g.__nx.me()!==name)return;
+rdb=g.firebase.app().database(DB_URL);
+TSV=g.firebase.database.ServerValue.TIMESTAMP;
+me=name;started=uid;api.ready=false;
+myRef=rdb.ref('presence/'+uid);
+offRef=rdb.ref('.info/serverTimeOffset');
+offRef.on('value',function(s){off=Number(s.val())||0});
+connRef=rdb.ref('.info/connected');
+connRef.on('value',function(s){
+connected=s.val()===true;
+if(!connected||!myRef)return;
+myRef.onDisconnect().set({id:me,online:false,ts:TSV}).then(function(){if(visible())put(true)},function(){});
+});
+listRef=rdb.ref('presence');
+listRef.on('child_added',onRec,function(){});
+listRef.on('child_changed',onRec,function(){});
+listRef.on('child_removed',onGone,function(){});
+listRef.once('value',function(){api.ready=true;recalcAll();fire()},function(){api.expected=false});
+hbT=setInterval(function(){if(connected&&visible()&&myRef){try{myRef.child('ts').set(TSV)}catch(e){}}},HB);
+tickT=setInterval(recalcAll,TICK);
+}catch(e){api.expected=false;try{console.warn('presence',e)}catch(x){}}
+});
+}
+function stop(){
+detach();
+myRef=null;started='';me='';api.ready=false;api.expected=false;P={};eff={};connected=false;
+}
+api.off=function(){
+try{if(myRef){myRef.set({id:me,online:false,ts:TSV})}}catch(e){}
+loggedOut=true;
+try{if(myRef)myRef.onDisconnect().cancel()}catch(e){}
+stop();
+};
+setInterval(function(){
+try{
+if(!g.firebase||!g.firebase.auth||!g.__nx)return;
+var u=g.firebase.auth().currentUser,m=g.__nx.me&&g.__nx.me();
+if(!u||!m){loggedOut=false;if(started)stop();return}
+if(loggedOut)return;
+if(started!==u.uid||me!==m){if(started)stop();if(sdkFail<4)begin(m,u.uid)}
+}catch(e){}
+},1000);
+document.addEventListener('visibilitychange',function(){
+if(!myRef)return;
+if(visible()){if(connected)put(true)}else put(false);
+});
+g.addEventListener('pagehide',function(){if(myRef)put(false)});
+g.addEventListener('beforeunload',function(){if(myRef)put(false)});
+}catch(err){try{console.warn('presence addon',err)}catch(x){}}
+
+/* ---------- Favourite person ---------- */
+try{
+var was=null,wasFor='',tT=0,tEl=null;
+function nx(){return g.__nx}
+function favKey(){var n=nx();return 'nx_fav_'+((n&&n.me&&n.me())||'')}
+function getFav(){try{return String(localStorage.getItem(favKey())||'')}catch(e){return ''}}
+function setFav(v){try{if(v)localStorage.setItem(favKey(),v);else localStorage.removeItem(favKey())}catch(e){}}
+function toast(name){
+try{
+if(!tEl){
+tEl=document.createElement('div');
+tEl.style.cssText='display:none;position:fixed;left:8px;right:8px;top:6px;z-index:99999;background:#090702;border:2px solid #22c55e;border-radius:10px;padding:8px 10px;color:#fff8e1;font-size:13px;font-weight:700;text-align:center;font-family:Arial,sans-serif';
+document.body.appendChild(tEl);
+}
+tEl.textContent='';
+var a=document.createElement('div');a.textContent='♥ Your favorite person is online';
+var b=document.createElement('div');b.style.cssText='font-size:11px;color:#4ade80;margin-top:2px;overflow-wrap:anywhere';b.textContent=name;
+tEl.appendChild(a);tEl.appendChild(b);
+tEl.style.display='block';
+clearTimeout(tT);tT=setTimeout(function(){tEl.style.display='none'},6000);
+}catch(e){}
+}
+g.__nxFavCheck=function(){
+try{
+var n=nx();if(!n||!n.me||!n.me())return;
+var fav=getFav();
+if(!fav){was=null;wasFor='';return}
+if(wasFor!==fav){was=null;wasFor=fav}
+var us=n.users();if(!us||!us.length)return;
+if(g.__nxPres&&g.__nxPres.expected&&!g.__nxPres.ready)return;
+var u=null,i;
+for(i=0;i<us.length;i++){if(us[i].id===fav){u=us[i];break}}
+if(!u)return;
+var on=!!n.online(u);
+if(was===false&&on){toast(n.dn(u.id));try{n.play('ring')}catch(e){}}
+was=on;
+}catch(e){}
+};
+function findOpt(txt){
+var io=document.getElementById('inboxOptions');if(!io)return null;
+var bs=io.getElementsByTagName('button'),i;
+for(i=0;i<bs.length;i++){if(bs[i].textContent===txt)return bs[i]}
+return null;
+}
+var io=document.getElementById('inboxOptions');
+if(io){
+var b=document.createElement('button');
+b.type='button';b.className='opt-btn';b.tabIndex=0;b.textContent='Favourite ID';
+b.addEventListener('click',function(){
+io.style.display='none';
+var cur=getFav(),v=prompt('Enter your favorite person\'s ID. Leave empty to remove.',cur);
+if(v===null)return;
+v=String(v).replace(/^\s+|\s+$/g,'').replace(/\s+/g,'_').toLowerCase();
+if(!v){setFav('');was=null;alert('Favourite removed.');return}
+var n=nx(),us=(n&&n.users&&n.users())||[],ok=false,i;
+for(i=0;i<us.length;i++){if(us[i].id===v){ok=true;break}}
+if(!ok){alert('This ID was not found.');return}
+if(n&&n.me&&v===String(n.me()).toLowerCase()){alert('Please choose another person.');return}
+setFav(v);was=null;wasFor='';
+alert('Saved. You will get a message when '+n.dn(v)+' comes online.');
+g.__nxFavCheck();
+});
+var ref=findOpt('View Profile');
+if(ref&&ref.nextSibling)io.insertBefore(b,ref.nextSibling);
+else io.insertBefore(b,findOpt('Delete ID')||null);
+}
+}catch(err2){try{console.warn('favourite addon',err2)}catch(x){}}
+})();
+</script>
+
+<script>
+/* ===== NexaChat upload indicator: video bhejte ya status lagate waqt "uploading" nazar aaye (sirf dikhata hai, kuch aur nahi badalta) ===== */
+(function(){
+var box=null,bar=null,txt=null,total=0,done=0,tm=null,LB='video';
+function mk(){
+if(box)return true;
+try{
+box=document.createElement('div');
+box.style.cssText='display:none;position:fixed;left:8px;right:8px;top:6px;z-index:99998;pointer-events:none;background:#090702;border:2px solid #fbbf24;border-radius:10px;padding:8px 10px;color:#fff8e1;font-size:13px;font-weight:700;text-align:center;font-family:Arial,sans-serif';
+txt=document.createElement('div');
+var tr=document.createElement('div');
+tr.style.cssText='height:8px;background:#35290e;border-radius:4px;margin-top:6px;overflow:hidden';
+bar=document.createElement('div');
+bar.style.cssText='height:8px;width:0;background:#22c55e;border-radius:4px';
+tr.appendChild(bar);box.appendChild(txt);box.appendChild(tr);
+document.body.appendChild(box);
+return true
+}catch(e){box=null;return false}
+}
+function show(t,p){if(!mk())return;box.style.display='block';txt.textContent=t;bar.style.width=p+'%'}
+function hide(){clearTimeout(tm);if(box)box.style.display='none'}
+window.nxUp={
+prep:function(l){LB=l||'video';clearTimeout(tm);done=0;total=0;show('Preparing '+LB+'...',5);tm=setTimeout(hide,60000)},
+start:function(n){clearTimeout(tm);total=n||1;done=0;show('Uploading '+LB+'... 0%',10);tm=setTimeout(hide,180000)},
+step:function(){done++;var p=Math.min(100,Math.round(done*100/(total||1)));show('Uploading '+LB+'... '+p+'%',p)},
+end:function(){hide()}
+}
+})();
+</script>
+
+<script>
+/* ===== KaiAds (SDK v5, responsive, home screen only) =====
+   Official docs: https://www.kaiads.com/publishers/sdk.html
+   KAI_TEST: 1 = test ads (testing ke liye), 0 = real ads (KaiStore release se pehle 0 karna hai) */
+(function(){
+var KAI_PUBLISHER='10afe1b6-d36e-4133-b44c-7d87f5139a62';
+var KAI_APP='NexaChat', KAI_SLOT='nexachat_home', KAI_TEST=0;
+var KAI_SDK='https://static.kaiads.com/ads-sdk/ads-sdk.v5.min.js';
+var HEIGHTS=[264,100];            /* SDK max 240x264; 264 fail ho to chhota size try hota hai */
+var st=window.__nxAd={sdk:'idle',req:'idle',err:'',attempts:0,hIdx:0,busy:false,shown:false,last:0,gap:0,kaios:false,msg:''};
+var ua=String(navigator.userAgent||'');
+st.kaios=/kaios/i.test(ua);                       /* docs: website integration sirf KaiOS par */
+var dbg=/adsdebug/i.test(String(location.search)+String(location.hash));
+function $(id){return document.getElementById(id)}
+function say(t){
+st.msg=t;
+if(!dbg)return;
+try{
+var d=$('kaiAdDbg');
+if(!d){d=document.createElement('div');d.id='kaiAdDbg';d.style.cssText='font-size:9px;color:#e7d6a5;word-break:break-all;padding:4px 2px;flex-shrink:0';var h=$('homeApp');h.insertBefore(d,h.querySelector('.soft'))}
+d.textContent='Ad: '+t+' (try '+st.attempts+')'
+}catch(e){}
+}
+function park(){var w=$('kaiAdWrap');if(!w)return;w.style.cssText='display:none';$('kaiAdLbl').style.display='none';var b=$('kaiAdBox');if(b)b.className=''}
+function measure(){var w=$('kaiAdWrap');if(!w)return;w.style.cssText='position:absolute;left:-9999px;top:0;width:240px;visibility:hidden';$('kaiAdLbl').style.display='none'}
+function unpark(){var w=$('kaiAdWrap');if(!w)return;w.style.cssText='margin-top:12px;flex-shrink:0';$('kaiAdLbl').style.display='block';var b=$('kaiAdBox');if(b)b.className='nx-ad'}
+function freshBox(w,h){
+/* har request ke liye naya container (SDK ek container par display sirf 1 baar karta hai) */
+var old=$('kaiAdBox'),b=document.createElement('div');
+b.id='kaiAdBox';b.setAttribute('tabindex','0');
+b.style.cssText='overflow:hidden;margin:0 auto;width:'+w+'px;height:'+h+'px';
+if(old&&old.parentNode)old.parentNode.replaceChild(b,old);
+return b
+}
+function code(err){
+var c=err;
+if(err&&typeof err==='object')c=(err.code!==undefined?err.code:(err.errorCode!==undefined?err.errorCode:err.message));
+var m=String(c).match(/\d+/);
+return m?parseInt(m[0],10):-1
+}
+function fail(err,dt){
+if(dt)clearTimeout(dt);
+st.busy=false;st.req='error';st.err=String(err&&typeof err==='object'?(err.message||err.code||'error'):err);
+var c=code(err);
+try{console.warn('KaiAds error:',err)}catch(e){}
+park();
+try{var b=$('kaiAdBox');if(b)b.innerHTML=''}catch(e){}
+/* 6 = ad nahi mila, 3 = container chhota: chhota size try karo; baqi errors par 60s baad dobara */
+if((c===6||c===3)&&st.hIdx<HEIGHTS.length-1){st.hIdx++;st.gap=3000}
+else st.gap=60000;
+say('error '+st.err)
+}
+function request(){
+if(st.busy||st.shown)return;
+if(typeof window.getKaiAd!=='function'){st.sdk='missing';say('SDK function missing');return}
+st.busy=true;st.attempts++;st.last=Date.now();st.req='requesting';
+var w=Math.min(240,Math.max(120,(window.innerWidth||240)-24)),h=HEIGHTS[st.hIdx]||HEIGHTS[0];
+var box=freshBox(w,h),dt=null,got=false;measure();
+say('requesting '+w+'x'+h+(KAI_TEST?' (test)':''));
+try{
+window.getKaiAd({
+publisher:KAI_PUBLISHER,app:KAI_APP,slot:KAI_SLOT,test:KAI_TEST,timeout:10000,
+w:w,h:h,container:box,
+onerror:function(err){if(!got)fail(err,dt)},
+onready:function(ad){
+if(got)return;got=true;st.req='ready';say('ready');
+try{
+ad.on('display',function(){clearTimeout(dt);st.shown=true;st.busy=false;st.req='displayed';box.style.height='auto';say('displayed');if(window.updateFocus)setTimeout(window.updateFocus,60)});
+ad.on('click',function(){st.clicked=true});
+}catch(e){}
+unpark();
+try{ad.call('display',{tabindex:0,navClass:'nx-ad',display:'block'})}catch(e){fail(e,dt);return}
+dt=setTimeout(function(){
+if(st.req==='displayed')return;
+/* display event na aaye par ad dikh raha ho to rakho, warna chhupa do */
+if(box.childNodes.length&&box.offsetHeight>20){st.shown=true;st.busy=false;st.req='displayed';box.style.height='auto';say('displayed (no event)')}
+else fail('display timeout',null)
+},8000)
+}
+})
+}catch(e){fail(e,dt)}
+}
+function loadSdk(){
+if(typeof window.getKaiAd==='function'){st.sdk='loaded';return}
+if(st.sdk==='loading'||st.sdk==='failed')return;
+st.sdk='loading';say('loading SDK');
+var s=document.createElement('script'),done=false;
+var end=function(ok){if(done)return;done=true;clearTimeout(wd);if(ok&&typeof window.getKaiAd==='function'){st.sdk='loaded';say('SDK loaded')}else{st.sdk='failed';st.last=Date.now();say('SDK load failed')}};
+var wd=setTimeout(function(){end(false)},20000);
+s.onload=function(){end(true)};s.onerror=function(){end(false)};
+s.src=KAI_SDK;
+try{document.getElementsByTagName('head')[0].appendChild(s)}catch(e){end(false)}
+}
+function tick(){
+try{
+if(!st.kaios||st.shown||st.busy)return;
+var hm=$('homeApp');
+if(!hm||!hm.classList.contains('show'))return;      /* sirf Home screen par */
+if(st.sdk==='idle'){loadSdk();return}
+if(st.sdk==='failed'){if(Date.now()-st.last>60000){st.last=Date.now();st.sdk='idle'}return}
+if(st.sdk!=='loaded'){return}
+if(st.attempts>=6)return;
+if(st.attempts>0&&Date.now()-st.last<st.gap)return;
+request()
+}catch(e){}
+}
+if(!st.kaios){say('skipped: not KaiOS');return}
+/* app ka load slow na ho: SDK 2 second baad, DOM load ke baad (docs: error 1 se bachne ke liye) */
+function start(){setTimeout(function(){tick();setInterval(tick,2000)},2000)}
+if(document.readyState==='complete')start();else window.addEventListener('load',start)
+})();
+</script>
+
+<script>
+/* ===== Incoming message banner (DP + name + message + count) and "Favourite (Selected)" button. ES5, KaiOS ready ===== */
+(function(){
+try{
+var g=window,el=null,avE=null,nmE=null,txE=null,cnE=null,tT=0,curId='';
+function mk(t,css,tx){var e=document.createElement(t);if(css)e.style.cssText=css;if(tx!==undefined)e.textContent=tx;return e}
+function build(){
+if(el)return;
+el=mk('div','display:none;position:fixed;left:6px;right:6px;top:6px;z-index:99997;align-items:center;background:#090702;border:2px solid #fbbf24;border-radius:12px;padding:6px 8px;color:#fff8e1;font-family:Arial,sans-serif;cursor:pointer');
+avE=mk('div','width:36px;height:36px;flex-shrink:0;border-radius:50%;background-color:#854d0e;background-size:cover;background-position:center;color:#fff8e1;text-align:center;line-height:36px;font-weight:800;font-size:16px;margin-right:8px;overflow:hidden');
+var mid=mk('div','flex:1;min-width:0');
+nmE=mk('div','font-size:13px;font-weight:800;color:#fbbf24;overflow:hidden;white-space:nowrap;text-overflow:ellipsis');
+txE=mk('div','font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis');
+mid.appendChild(nmE);mid.appendChild(txE);
+cnE=mk('div','flex-shrink:0;min-width:24px;height:24px;padding:0 7px;border-radius:12px;background:#22c55e;color:#000;font-weight:900;font-size:12px;line-height:24px;text-align:center;margin-left:8px');
+el.appendChild(avE);el.appendChild(mid);el.appendChild(cnE);
+el.addEventListener('click',function(){hide();try{if(g.openChat&&curId)g.openChat(curId)}catch(e){}});
+document.body.appendChild(el);
+}
+function hide(){clearTimeout(tT);if(el)el.style.display='none'}
+g.nxMsgBanner=function(id,text,n){
+var nx=g.__nx;if(!nx)return;
+build();curId=id;
+var us=nx.users()||[],u=null,i;
+for(i=0;i<us.length;i++){if(us[i].id===String(id).toLowerCase()){u=us[i];break}}
+var nm=nx.dn(id);
+avE.style.backgroundImage='';avE.textContent='';
+if(u&&u.photo)avE.style.backgroundImage='url("'+u.photo+'")';
+else avE.textContent=g.nxFirst?g.nxFirst(nm):String(nm).charAt(0).toUpperCase();
+nmE.textContent=nm;
+var t=String(text||'').replace(/\s+/g,' ');
+txE.textContent=t.length>60?t.slice(0,60)+'...':t;
+n=parseInt(n,10);if(!(n>0))n=1;
+cnE.textContent=n>99?'99+':String(n);
+el.style.display='flex';
+clearTimeout(tT);tT=setTimeout(hide,6000);
+};
+
+/* Inbox Options: "Favourite (Selected)" = chat list me selected user ko favourite banao / hatao */
+var lastUid=null;
+document.addEventListener('focus',function(e){var t=e.target;if(t&&t.classList&&t.classList.contains('row')&&t.parentNode&&t.parentNode.id==='inboxList'){var u=t.getAttribute('data-uid');if(u)lastUid=u}},true);
+document.addEventListener('click',function(e){var t=e.target,r=t&&t.closest?t.closest('#inboxList .row'):null;if(r){var u=r.getAttribute('data-uid');if(u)lastUid=u}},true);
+function selUid(){
+if(lastUid&&document.querySelector('#inboxList .row[data-uid="'+lastUid+'"]'))return lastUid;
+var r=document.querySelector('#inboxList .row.active');
+return r?r.getAttribute('data-uid'):null;
+}
+var io=document.getElementById('inboxOptions');
+if(io){
+var b=mk('button','');b.type='button';b.className='opt-btn';b.tabIndex=0;b.textContent='Favourite (Selected)';
+b.addEventListener('click',function(){
+io.style.display='none';
+var nx=g.__nx,u=selUid();
+if(!u){alert('Please select a user first.');return}
+if(!nx||!nx.me())return;
+u=String(u).toLowerCase();
+if(u===String(nx.me()).toLowerCase()){alert('Please choose another person.');return}
+var key='nx_fav_'+nx.me(),cur='';
+try{cur=String(localStorage.getItem(key)||'')}catch(e){}
+try{
+if(cur===u){localStorage.removeItem(key);alert('Favourite removed: '+nx.dn(u))}
+else{localStorage.setItem(key,u);alert('Saved. You will get a message when '+nx.dn(u)+' comes online.')}
+}catch(e2){alert('Could not save.')}
+try{if(g.__nxFavCheck)g.__nxFavCheck()}catch(e3){}
+});
+var bs=io.getElementsByTagName('button'),ref=null,k;
+for(k=0;k<bs.length;k++){if(bs[k].textContent==='Favourite ID'){ref=bs[k];break}}
+if(ref&&ref.parentNode)ref.parentNode.insertBefore(b,ref.nextSibling);
+else io.insertBefore(b,null);
+}
+}catch(err){try{console.warn('banner addon',err)}catch(x){}}
+})();
+</script>
+<script>
+/* nxDiag: after 4 seconds tell which file failed to load */
+setTimeout(function(){
+var m=[];
+if(typeof firebase==='undefined')m.push('Firebase did not load (internet problem or CDN blocked)');
+else if(!window.__fs)m.push('Main script (part 1) did not load');
+if(!window.__nexaReady)m.push('App script (part 2) did not load');
+if(m.length)alert('Check:\n'+m.join('\n'));
+},4000);
+</script>
+<style>[id*="netlify" i],[class*="netlify" i],a[href*="netlify.com" i]{display:none!important;visibility:hidden!important;opacity:0!important;pointer-events:none!important}</style>
+<script>
+/* hide host badge */
+(function(){
+function bad(el){
+try{
+var t=el.tagName;if(!t||t==='SCRIPT'||t==='STYLE'||t==='LINK'||t==='META'||t==='TITLE'||t==='HEAD'||t==='BODY'||t==='HTML')return false;
+if(t==='IFRAME'&&/netlify/i.test(el.src||''))return true;
+if(/netlify/i.test((el.id||'')+' '+(typeof el.className==='string'?el.className:'')))return true;
+if(el.shadowRoot&&/netlify/i.test(el.shadowRoot.innerHTML))return true;
+if(/powered by netlify/i.test(el.textContent||''))return true;
+}catch(e){}
+return false}
+function sweep(){
+try{
+var roots=[document.body,document.documentElement],i,j,k,kids;
+for(i=0;i<roots.length;i++){kids=roots[i].children;for(j=0;j<kids.length;j++){k=kids[j];
+if(k.getAttribute&&k.getAttribute('data-nx-nf'))continue;
+if(bad(k)){k.setAttribute('data-nx-nf','1');k.style.setProperty('display','none','important');k.style.setProperty('visibility','hidden','important');k.style.setProperty('pointer-events','none','important')}}}
+}catch(e){}}
+sweep();
+try{if(window.MutationObserver)new MutationObserver(sweep).observe(document.documentElement,{childList:true,subtree:false});}catch(e){}
+try{if(window.MutationObserver&&document.body)new MutationObserver(sweep).observe(document.body,{childList:true})}catch(e){}
+setInterval(sweep,1000);
+window.addEventListener('load',function(){sweep();setTimeout(sweep,1500);setTimeout(sweep,4000)});
+})();
+</script>
